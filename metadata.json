@@ -1,0 +1,6 @@
+{
+  "name": "Safiri",
+  "description": "School bus tracker for schools in Nairobi, Kenya with role-based dashboards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
