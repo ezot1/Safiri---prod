@@ -1,5 +1,8 @@
 package com.example.screens
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,6 +38,7 @@ fun LoginScreen(
 ) {
     val coroutineScope = rememberCoroutineScope()
     var isSignUpMode by remember { mutableStateOf(false) }
+    var showParentSignupWizard by remember { mutableStateOf(false) }
     var selectedRole by remember { mutableStateOf(UserRole.PARENT) }
     var fullName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("parent@safiri.co.ke") }
@@ -42,6 +46,15 @@ fun LoginScreen(
     var showGoogleDialog by remember { mutableStateOf(false) }
     var isGoogleSigningIn by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    if (showParentSignupWizard) {
+        ParentSignupScreen(
+            viewModel = viewModel,
+            onBackToLogin = { showParentSignupWizard = false },
+            modifier = modifier
+        )
+        return
+    }
 
     // Pre-fill email based on selected role ONLY in sign in mode
     LaunchedEffect(selectedRole, isSignUpMode) {
@@ -64,48 +77,81 @@ fun LoginScreen(
         modifier = modifier
             .fillMaxSize()
             .background(BackgroundColor),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.TopCenter
     ) {
         Column(
             modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(24.dp)
+                .padding(horizontal = 24.dp, vertical = 24.dp)
                 .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top
         ) {
         Spacer(modifier = Modifier.height(24.dp))
 
-        // 1. Safiri Logo (Gradient blue-to-purple, rounded rect, bus SVG icon)
+        // 1. Beautiful Hero Card containing Custom Generated Onboarding Art
         Box(
             modifier = Modifier
-                .size(72.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(AccentBlue, PurpleAccent)
-                    )
-                ),
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .height(160.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .border(1.dp, BorderColor, RoundedCornerShape(24.dp))
         ) {
-            Icon(
-                imageVector = Icons.Filled.DirectionsBus,
-                contentDescription = "Safiri Logo",
-                tint = Color.White,
-                modifier = Modifier.size(38.dp)
+            Image(
+                painter = painterResource(id = com.example.R.drawable.img_login_hero),
+                contentDescription = "Safiri Onboarding Art",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
             )
+            // Bottom shadow overlay gradient to integrate nicely with dark layout
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                BackgroundColor.copy(alpha = 0.85f)
+                            )
+                        )
+                    )
+            )
+            
+            // Neon glassmorphic Safiri badge floating centrally
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(SurfaceColor.copy(alpha = 0.85f))
+                    .border(1.dp, BorderColor, RoundedCornerShape(20.dp))
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.DirectionsBus,
+                        contentDescription = "Safiri Logo",
+                        tint = AccentBlue,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Safiri",
+                        color = TextPrimaryColor,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.5).sp
+                    )
+                }
+            }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // App name "Safiri" + subtitle "School bus tracker · Nairobi"
-        Text(
-            text = "Safiri",
-            color = TextPrimaryColor,
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = (-0.5).sp
-        )
         Text(
             text = "School bus tracker • Nairobi",
             color = TextSecondaryColor,
@@ -114,7 +160,32 @@ fun LoginScreen(
             modifier = Modifier.padding(top = 4.dp)
         )
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clip(RoundedCornerShape(100.dp))
+                .background(if (viewModel.isFirebaseAuthEnabled) GreenAccent.copy(alpha = 0.1f) else BorderColor.copy(alpha = 0.5f))
+                .border(1.dp, if (viewModel.isFirebaseAuthEnabled) GreenAccent else BorderColor, RoundedCornerShape(100.dp))
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(if (viewModel.isFirebaseAuthEnabled) GreenAccent else TextTertiaryColor)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = if (viewModel.isFirebaseAuthEnabled) "Firebase Auth Engaged" else "Local Auth Engine Active",
+                color = if (viewModel.isFirebaseAuthEnabled) GreenAccent else TextSecondaryColor,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.5.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
 
         // --- MODERN TABS FOR SIGN IN / SIGN UP ---
         Row(
@@ -229,7 +300,7 @@ fun LoginScreen(
         Spacer(modifier = Modifier.height(10.dp))
 
         RoleCard(
-            title = "School Admin",
+            title = "School Administrator",
             description = "Monitor the full fleet, manage rosters, send alerts.",
             icon = Icons.Filled.School,
             selected = selectedRole == UserRole.ADMIN,
@@ -347,18 +418,22 @@ fun LoginScreen(
         Button(
             onClick = {
                 if (isSignUpMode) {
-                    if (fullName.trim().isEmpty() || email.trim().isEmpty() || password.trim().isEmpty()) {
-                        errorMessage = "Please fill in all fields."
+                    if (selectedRole == UserRole.PARENT) {
+                        showParentSignupWizard = true
                     } else {
-                        viewModel.signUp(fullName, email, selectedRole, "email", password) { success, message ->
-                            if (!success) errorMessage = message
+                        if (fullName.trim().isEmpty() || email.trim().isEmpty() || password.trim().isEmpty()) {
+                            errorMessage = "Please fill in all fields."
+                        } else {
+                            viewModel.signUp(fullName, email, selectedRole, "email", password) { success, message ->
+                                if (!success) errorMessage = message
+                            }
                         }
                     }
                 } else {
                     if (email.trim().isEmpty() || password.trim().isEmpty()) {
                         errorMessage = "Please fill in all fields."
                     } else {
-                        viewModel.signIn(email, selectedRole) { success, message ->
+                        viewModel.signIn(email, password, selectedRole) { success, message ->
                             if (!success) errorMessage = message
                         }
                     }
@@ -373,7 +448,9 @@ fun LoginScreen(
             shape = RoundedCornerShape(12.dp)
         ) {
             Text(
-                text = if (isSignUpMode) "Create Safiri Account" else "Sign In to Safiri",
+                text = if (isSignUpMode) {
+                    if (selectedRole == UserRole.PARENT) "Start 3-Step Parent Sign Up →" else "Create Safiri Account"
+                } else "Sign In to Safiri",
                 color = BackgroundColor,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold
@@ -497,7 +574,7 @@ fun LoginScreen(
                                             if (!success) errorMessage = message
                                         }
                                     } else {
-                                        viewModel.signIn(userEmail, selectedRole) { success, message ->
+                                        viewModel.signIn(userEmail, "", selectedRole) { success, message ->
                                             isGoogleSigningIn = false
                                             if (!success) errorMessage = message
                                         }
@@ -558,7 +635,7 @@ fun LoginScreen(
                                             if (!success) errorMessage = message
                                         }
                                     } else {
-                                        viewModel.signIn(guestEmail, selectedRole) { success, message ->
+                                        viewModel.signIn(guestEmail, "", selectedRole) { success, message ->
                                             isGoogleSigningIn = false
                                             if (!success) errorMessage = message
                                         }

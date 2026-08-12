@@ -1,5 +1,7 @@
 package com.example.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,11 +16,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.animation.core.*
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -27,6 +33,10 @@ import androidx.compose.ui.unit.sp
 import com.example.components.*
 import com.example.models.AlertSeverity
 import com.example.models.FleetBusItem
+import com.example.models.InterportalMessage
+import com.example.models.Student
+import com.example.models.StudentStatus
+import com.example.models.SubscriptionStatus
 import com.example.ui.theme.*
 import com.example.viewmodel.AppViewModel
 
@@ -36,81 +46,124 @@ fun AdminDashboard(
     modifier: Modifier = Modifier
 ) {
     var activeTab by remember { mutableStateOf(0) } // 0: Fleet, 1: Live Map, 2: Drivers, 3: Alerts, 4: Settings
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = BackgroundColor,
-        bottomBar = {
-            NavigationBar(
-                containerColor = SurfaceColor,
-                tonalElevation = 8.dp,
-                modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
-            ) {
-                NavigationBarItem(
-                    selected = activeTab == 0,
-                    onClick = { activeTab = 0 },
-                    icon = { Icon(Icons.Filled.DirectionsBus, contentDescription = "Fleet") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = PurpleAccent,
-                        unselectedIconColor = TextTertiaryColor,
-                        indicatorColor = Surface3Color
-                    ),
-                    modifier = Modifier.testTag("admin_tab_fleet")
-                )
-                NavigationBarItem(
-                    selected = activeTab == 1,
-                    onClick = { activeTab = 1 },
-                    icon = { Icon(Icons.Filled.Map, contentDescription = "Live Map") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = PurpleAccent,
-                        unselectedIconColor = TextTertiaryColor,
-                        indicatorColor = Surface3Color
-                    ),
-                    modifier = Modifier.testTag("admin_tab_mapview")
-                )
-                NavigationBarItem(
-                    selected = activeTab == 2,
-                    onClick = { activeTab = 2 },
-                    icon = { Icon(Icons.Filled.Badge, contentDescription = "Drivers") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = PurpleAccent,
-                        unselectedIconColor = TextTertiaryColor,
-                        indicatorColor = Surface3Color
-                    ),
-                    modifier = Modifier.testTag("admin_tab_drivers")
-                )
-                NavigationBarItem(
-                    selected = activeTab == 3,
-                    onClick = { activeTab = 3 },
-                    icon = { Icon(Icons.Filled.Campaign, contentDescription = "Alerts") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = PurpleAccent,
-                        unselectedIconColor = TextTertiaryColor,
-                        indicatorColor = Surface3Color
-                    ),
-                    modifier = Modifier.testTag("admin_tab_alerts")
-                )
-                NavigationBarItem(
-                    selected = activeTab == 4,
-                    onClick = { activeTab = 4 },
-                    icon = { Icon(Icons.Filled.Settings, contentDescription = "Settings") },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = PurpleAccent,
-                        unselectedIconColor = TextTertiaryColor,
-                        indicatorColor = Surface3Color
-                    ),
-                    modifier = Modifier.testTag("admin_tab_settings")
-                )
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            AdminSidebarContent(
+                viewModel = viewModel,
+                onClose = { scope.launch { drawerState.close() } }
+            )
+        },
+        modifier = modifier
+    ) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = BackgroundColor,
+            topBar = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(SurfaceColor)
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = { scope.launch { drawerState.open() } },
+                            modifier = Modifier.testTag("admin_sidebar_toggle_btn")
+                        ) {
+                            Icon(Icons.Filled.Menu, contentDescription = "Open Sidebar", tint = PurpleAccent)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "SAFIRI ADM PORTAL",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimaryColor
+                        )
+                    }
+                    IconButton(onClick = { viewModel.signOut() }) {
+                        Icon(Icons.Filled.Logout, contentDescription = "Logout", tint = RedAccent)
+                    }
+                }
+            },
+            bottomBar = {
+                NavigationBar(
+                    containerColor = SurfaceColor,
+                    tonalElevation = 8.dp,
+                    modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
+                ) {
+                    NavigationBarItem(
+                        selected = activeTab == 0,
+                        onClick = { activeTab = 0 },
+                        icon = { Icon(Icons.Filled.DirectionsBus, contentDescription = "Fleet") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = PurpleAccent,
+                            unselectedIconColor = TextTertiaryColor,
+                            indicatorColor = Surface3Color
+                        ),
+                        modifier = Modifier.testTag("admin_tab_fleet")
+                    )
+                    NavigationBarItem(
+                        selected = activeTab == 1,
+                        onClick = { activeTab = 1 },
+                        icon = { Icon(Icons.Filled.Map, contentDescription = "Live Map") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = PurpleAccent,
+                            unselectedIconColor = TextTertiaryColor,
+                            indicatorColor = Surface3Color
+                        ),
+                        modifier = Modifier.testTag("admin_tab_mapview")
+                    )
+                    NavigationBarItem(
+                        selected = activeTab == 2,
+                        onClick = { activeTab = 2 },
+                        icon = { Icon(Icons.Filled.Badge, contentDescription = "Drivers") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = PurpleAccent,
+                            unselectedIconColor = TextTertiaryColor,
+                            indicatorColor = Surface3Color
+                        ),
+                        modifier = Modifier.testTag("admin_tab_drivers")
+                    )
+                    NavigationBarItem(
+                        selected = activeTab == 3,
+                        onClick = { activeTab = 3 },
+                        icon = { Icon(Icons.Filled.Campaign, contentDescription = "Alerts") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = PurpleAccent,
+                            unselectedIconColor = TextTertiaryColor,
+                            indicatorColor = Surface3Color
+                        ),
+                        modifier = Modifier.testTag("admin_tab_alerts")
+                    )
+                    NavigationBarItem(
+                        selected = activeTab == 4,
+                        onClick = { activeTab = 4 },
+                        icon = { Icon(Icons.Filled.Settings, contentDescription = "Settings") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = PurpleAccent,
+                            unselectedIconColor = TextTertiaryColor,
+                            indicatorColor = Surface3Color
+                        ),
+                        modifier = Modifier.testTag("admin_tab_settings")
+                    )
+                }
             }
-        }
-    ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding)) {
-            when (activeTab) {
-                0 -> AdminFleetTab(viewModel)
-                1 -> AdminMapViewTab(viewModel)
-                2 -> AdminDriversTab(viewModel)
-                3 -> AdminAlertsTab(viewModel)
-                4 -> AdminSettingsTab(viewModel)
+        ) { innerPadding ->
+            Box(modifier = Modifier.padding(innerPadding)) {
+                when (activeTab) {
+                    0 -> AdminFleetTab(viewModel, onOpenSidebar = { scope.launch { drawerState.open() } })
+                    1 -> AdminMapViewTab(viewModel, onOpenSidebar = { scope.launch { drawerState.open() } })
+                    2 -> AdminDriversTab(viewModel, onOpenSidebar = { scope.launch { drawerState.open() } })
+                    3 -> AdminAlertsTab(viewModel, onOpenSidebar = { scope.launch { drawerState.open() } })
+                    4 -> AdminSettingsTab(viewModel, onOpenSidebar = { scope.launch { drawerState.open() } })
+                }
             }
         }
     }
@@ -120,9 +173,14 @@ fun AdminDashboard(
 // 1. FLEET STATUS TAB (AdminFleetTab)
 // ==========================================
 @Composable
-fun AdminFleetTab(viewModel: AppViewModel) {
+fun AdminFleetTab(
+    viewModel: AppViewModel,
+    onOpenSidebar: () -> Unit = {}
+) {
     val fleetBuses by viewModel.adminFleetBuses.collectAsState()
     val boardedCount by viewModel.boardedCount.collectAsState()
+    val subStatus by viewModel.subscriptionStatus.collectAsState()
+    val subAmount by viewModel.agreedMonthlyAmount.collectAsState()
 
     ScrollView(
         modifier = Modifier.fillMaxSize(),
@@ -139,12 +197,50 @@ fun AdminFleetTab(viewModel: AppViewModel) {
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold
             )
-            IconButton(onClick = { viewModel.signOut() }) {
-                Icon(Icons.Filled.Logout, contentDescription = "Logout", tint = RedAccent)
+            IconButton(
+                onClick = onOpenSidebar,
+                modifier = Modifier.testTag("admin_fleet_sidebar_toggle")
+            ) {
+                Icon(Icons.Filled.DirectionsBus, contentDescription = "Active Routes Status", tint = PurpleAccent)
             }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
+
+        // Live SOS Alert Resolution Banner
+        AdminSOSResolutionBanner(viewModel)
+
+        if (subStatus == SubscriptionStatus.PAYMENT_DUE) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(AmberAccent.copy(alpha = 0.15f))
+                    .border(1.dp, AmberAccent, RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Warning, contentDescription = "Due", tint = AmberAccent, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("Subscription Fee Due Soon", color = TextPrimaryColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Agreed Fee: $subAmount", color = TextSecondaryColor, fontSize = 10.sp)
+                    }
+                }
+                Button(
+                    onClick = { viewModel.paySubscriptionInvoice("", subAmount) },
+                    colors = ButtonDefaults.buttonColors(containerColor = AmberAccent),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.height(30.dp)
+                ) {
+                    Text("Pay Now", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = BackgroundColor)
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
 
         // Four summary metric tiles
         Row(
@@ -215,6 +311,11 @@ fun AdminFleetTab(viewModel: AppViewModel) {
             }
         }
 
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Interconnected Students Roster
+        AdminStudentInterconnectionCard(viewModel)
+
         Spacer(modifier = Modifier.height(24.dp))
     }
 }
@@ -223,25 +324,42 @@ fun AdminFleetTab(viewModel: AppViewModel) {
 // 2. LIVE MAP MULTI-BUS TRACKING TAB
 // ==========================================
 @Composable
-fun AdminMapViewTab(viewModel: AppViewModel) {
+fun AdminMapViewTab(
+    viewModel: AppViewModel,
+    onOpenSidebar: () -> Unit = {}
+) {
     val fleetBuses by viewModel.adminFleetBuses.collectAsState()
 
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Text(
-                text = "LIVE FLEET RADAR",
-                color = TextPrimaryColor,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Simultaneous GPS signals tracked through Nairobi streets",
-                color = TextSecondaryColor,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "LIVE FLEET RADAR",
+                    color = TextPrimaryColor,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Simultaneous GPS signals tracked through Nairobi streets",
+                    color = TextSecondaryColor,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+            IconButton(
+                onClick = onOpenSidebar,
+                modifier = Modifier.testTag("admin_mapview_sidebar_toggle")
+            ) {
+                Icon(Icons.Filled.DirectionsBus, contentDescription = "Active Routes Status", tint = PurpleAccent)
+            }
         }
 
         // Multiple buses drawn on Map Canvas
@@ -340,25 +458,42 @@ fun AdminMapViewTab(viewModel: AppViewModel) {
 // 3. DRIVERS ROSTER & RATINGS TAB
 // ==========================================
 @Composable
-fun AdminDriversTab(viewModel: AppViewModel) {
+fun AdminDriversTab(
+    viewModel: AppViewModel,
+    onOpenSidebar: () -> Unit = {}
+) {
     val drivers by viewModel.driversList.collectAsState()
 
     ScrollView(
         modifier = Modifier.fillMaxSize(),
         contentContainerStyle = Modifier.padding(16.dp)
     ) {
-        Text(
-            text = "DRIVER ROSTERS",
-            color = TextPrimaryColor,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "Monitor performance, ratings, and active licenses",
-            color = TextSecondaryColor,
-            fontSize = 13.sp,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "DRIVER ROSTERS",
+                    color = TextPrimaryColor,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Monitor performance, ratings, and active licenses",
+                    color = TextSecondaryColor,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+            }
+            IconButton(
+                onClick = onOpenSidebar,
+                modifier = Modifier.testTag("admin_drivers_sidebar_toggle")
+            ) {
+                Icon(Icons.Filled.DirectionsBus, contentDescription = "Active Routes Status", tint = PurpleAccent)
+            }
+        }
 
         // Driver Roster card
         SafiriCard(testTag = "drivers_roster_card") {
@@ -482,7 +617,10 @@ fun AdminDriversTab(viewModel: AppViewModel) {
 // ==========================================
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun AdminAlertsTab(viewModel: AppViewModel) {
+fun AdminAlertsTab(
+    viewModel: AppViewModel,
+    onOpenSidebar: () -> Unit = {}
+) {
     val alerts by viewModel.activeAlerts.collectAsState()
 
     var alertTitle by remember { mutableStateOf("") }
@@ -493,18 +631,32 @@ fun AdminAlertsTab(viewModel: AppViewModel) {
         modifier = Modifier.fillMaxSize(),
         contentContainerStyle = Modifier.padding(16.dp)
     ) {
-        Text(
-            text = "BROADCAST CENTRE",
-            color = TextPrimaryColor,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "Post critical traffic, weather, or scheduling alerts to parents",
-            color = TextSecondaryColor,
-            fontSize = 13.sp,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "BROADCAST CENTRE",
+                    color = TextPrimaryColor,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Post critical traffic, weather, or scheduling alerts to parents",
+                    color = TextSecondaryColor,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+            }
+            IconButton(
+                onClick = onOpenSidebar,
+                modifier = Modifier.testTag("admin_alerts_sidebar_toggle")
+            ) {
+                Icon(Icons.Filled.DirectionsBus, contentDescription = "Active Routes Status", tint = PurpleAccent)
+            }
+        }
 
         // Post Alert Form
         SafiriCard(testTag = "broadcast_form_card") {
@@ -593,9 +745,18 @@ fun AdminAlertsTab(viewModel: AppViewModel) {
 
             Button(
                 onClick = {
-                    viewModel.postAlert(alertTitle, alertDetail, selectedSeverity)
-                    alertTitle = ""
-                    alertDetail = ""
+                    if (alertTitle.isNotBlank()) {
+                        viewModel.postAlert(alertTitle, alertDetail, selectedSeverity)
+                        viewModel.sendInterportalMessage(
+                            senderName = "School Administration",
+                            senderRole = "ADMIN",
+                            recipientRole = "ALL",
+                            targetBusPlate = "ALL",
+                            content = "ADMIN BROADCAST: $alertTitle - $alertDetail"
+                        )
+                        alertTitle = ""
+                        alertDetail = ""
+                    }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = PurpleAccent),
                 modifier = Modifier
@@ -604,7 +765,7 @@ fun AdminAlertsTab(viewModel: AppViewModel) {
                     .testTag("post_alert_button"),
                 shape = RoundedCornerShape(10.dp)
             ) {
-                Text("Post to all parents", color = BackgroundColor, fontWeight = FontWeight.Bold)
+                Text("Post to all parents & drivers", color = BackgroundColor, fontWeight = FontWeight.Bold)
             }
         }
 
@@ -711,7 +872,10 @@ fun RowScope.SeverityBtn(
 // 5. SCHOOL SETTINGS & CONFIGS TAB
 // ==========================================
 @Composable
-fun AdminSettingsTab(viewModel: AppViewModel) {
+fun AdminSettingsTab(
+    viewModel: AppViewModel,
+    onOpenSidebar: () -> Unit = {}
+) {
     val t1 by viewModel.toggleAdminEmergency.collectAsState()
     val t2 by viewModel.toggleAdminGeofence.collectAsState()
     val t3 by viewModel.toggleAdminDailySummary.collectAsState()
@@ -777,11 +941,16 @@ fun AdminSettingsTab(viewModel: AppViewModel) {
             HorizontalDivider(color = BorderColor)
             SettingsRow(
                 icon = Icons.Filled.Payment,
-                label = "Subscription",
-                subLabel = "Plan active: Safiri Enterprise",
+                label = "Subscription details",
+                subLabel = "Manage billing, paybill & invoices",
                 onClick = { showSubscriptionDialog = true }
             )
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Full Interactive Admin Subscription Card
+        AdminSubscriptionManagementCard(viewModel = viewModel)
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -1069,5 +1238,646 @@ fun SettingsRow(
             }
         }
         Icon(imageVector = Icons.Filled.ChevronRight, contentDescription = "Chevron", tint = TextTertiaryColor)
+    }
+}
+
+// ==========================================
+// SIDEBAR COMPONENT (AdminSidebarContent)
+// ==========================================
+@Composable
+fun AdminSidebarContent(
+    viewModel: AppViewModel,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val fleetBuses by viewModel.adminFleetBuses.collectAsState()
+    
+    // Filter active buses (non-inactive, i.e., those assigned to a driver)
+    val activeBuses = fleetBuses.filter { it.plate != "KDE 991Z" }
+    
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(300.dp)
+            .background(SurfaceColor)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+    ) {
+        // Right-aligned side border line
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .width(1.dp)
+                .background(BorderColor)
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "SAFIRI RADAR",
+                        color = PurpleAccent,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.sp
+                    )
+                    Text(
+                        text = "Active Routes Monitor",
+                        color = TextSecondaryColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.testTag("admin_sidebar_close_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "Close Sidebar",
+                        tint = TextSecondaryColor
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(color = BorderColor)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Active Routes Title with live pulsing indicator
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .alpha(pulseAlpha)
+                        .background(GreenAccent)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "LIVE ACTIVE SHUTTLES",
+                    color = TextTertiaryColor,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "(${activeBuses.size})",
+                    color = TextSecondaryColor,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (activeBuses.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.DirectionsBus,
+                            contentDescription = "No Active Buses",
+                            tint = TextTertiaryColor,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "No Shuttles Running",
+                            color = TextSecondaryColor,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Awaiting driver roster dispatch",
+                            color = TextTertiaryColor,
+                            fontSize = 11.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    activeBuses.forEach { bus ->
+                        ActiveRouteSidebarItem(bus = bus, pulseAlpha = pulseAlpha)
+                    }
+                }
+            }
+            
+            // Footer Info
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(color = BorderColor)
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "System Status",
+                    color = TextTertiaryColor,
+                    fontSize = 11.sp
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(GreenAccent)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "All Services Nominal",
+                        color = GreenAccent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ActiveRouteSidebarItem(
+    bus: FleetBusItem,
+    pulseAlpha: Float,
+    modifier: Modifier = Modifier
+) {
+    // Map status strictly to "On-time" or "Delayed"
+    val displayStatus = when (bus.status.lowercase()) {
+        "on time", "on-time" -> "On-time"
+        "delayed" -> "Delayed"
+        else -> "On-time" // default active states like "Active" map to "On-time"
+    }
+    
+    val statusColor = if (displayStatus == "On-time") GreenAccent else RedAccent
+    
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Surface2Color)
+            .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+            .padding(12.dp)
+            .testTag("sidebar_route_item_${bus.plate.replace(" ", "_")}")
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.DirectionsBus,
+                    contentDescription = "Bus Icon",
+                    tint = AccentBlue,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = bus.plate,
+                    color = TextPrimaryColor,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            
+            // Status badge with pulsing dot
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(statusColor.copy(alpha = 0.12f))
+                    .border(1.dp, statusColor.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .alpha(pulseAlpha)
+                        .background(statusColor)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = displayStatus,
+                    color = statusColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Text(
+            text = "Captain: ${bus.driverName}",
+            color = TextSecondaryColor,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+        
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${bus.studentCount}/${bus.capacity} Students Aboard",
+                color = TextTertiaryColor,
+                fontSize = 10.sp
+            )
+            
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.Speed,
+                    contentDescription = "Speed",
+                    tint = TextTertiaryColor,
+                    modifier = Modifier.size(12.dp)
+                )
+                Spacer(modifier = Modifier.width(3.dp))
+                Text(
+                    text = "${bus.speed} km/h",
+                    color = TextSecondaryColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun AdminSOSResolutionBanner(viewModel: AppViewModel) {
+    val sosActive by viewModel.sosActive.collectAsState()
+    if (sosActive) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(RedAccent.copy(alpha = 0.2f))
+                .border(2.dp, RedAccent, RoundedCornerShape(16.dp))
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.Warning, contentDescription = "SOS", tint = RedAccent, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("CRITICAL DRIVER SOS TRIGGERED", color = RedAccent, fontSize = 13.sp, fontWeight = FontWeight.Black)
+                        Text("Driver Erick Mwangi (KDE 732X) dispatched emergency signal", color = TextPrimaryColor, fontSize = 11.sp)
+                    }
+                }
+                Button(
+                    onClick = { viewModel.dismissSOS() },
+                    colors = ButtonDefaults.buttonColors(containerColor = RedAccent),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Resolve SOS", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(14.dp))
+    }
+}
+
+@Composable
+fun AdminStudentInterconnectionCard(viewModel: AppViewModel) {
+    val context = LocalContext.current
+    val students by viewModel.students.collectAsState()
+    var showAddStudentDialog by remember { mutableStateOf(false) }
+
+    var editingParentStudent by remember { mutableStateOf<Student?>(null) }
+    var editParentNameInput by remember { mutableStateOf("") }
+    var editParentEmailInput by remember { mutableStateOf("") }
+    var editParentPhoneInput by remember { mutableStateOf("") }
+
+    var newStudentName by remember { mutableStateOf("") }
+    var newParentName by remember { mutableStateOf("") }
+    var newParentPhone by remember { mutableStateOf("") }
+    var newBusPlate by remember { mutableStateOf("KDE 732X") }
+    var newStop by remember { mutableStateOf("Kilimani Bus Bay") }
+
+    SafiriCard(testTag = "admin_student_roster_card") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "INTERCONNECTED STUDENT & PARENT DIRECTORY",
+                    color = TextTertiaryColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+                Text(
+                    text = "Synced across Parent, Driver, & Admin portals",
+                    color = TextSecondaryColor,
+                    fontSize = 11.sp
+                )
+            }
+            Button(
+                onClick = { showAddStudentDialog = true },
+                colors = ButtonDefaults.buttonColors(containerColor = PurpleAccent),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier.height(30.dp),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = "Add", modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Add Student", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        students.forEach { student ->
+            val statusColor = when (student.status) {
+                StudentStatus.BOARDED -> GreenAccent
+                StudentStatus.DROPPED_OFF -> AccentBlue
+                StudentStatus.ABSENT -> RedAccent
+                StudentStatus.NOT_BOARDED -> AmberAccent
+            }
+            val statusLabel = when (student.status) {
+                StudentStatus.BOARDED -> "BOARDED"
+                StudentStatus.DROPPED_OFF -> "ARRIVED"
+                StudentStatus.ABSENT -> "ABSENT"
+                StudentStatus.NOT_BOARDED -> "NOT BOARDED"
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Surface3Color)
+                    .padding(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(student.avatarColor.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(text = student.initials, color = student.avatarColor, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(text = student.name, color = TextPrimaryColor, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.clickable {
+                                    val cleanPhone = student.parentPhone.replace(" ", "").replace("-", "")
+                                    if (cleanPhone.isNotBlank()) {
+                                        try {
+                                            val intent = Intent(Intent.ACTION_DIAL).apply {
+                                                data = Uri.parse("tel:$cleanPhone")
+                                            }
+                                            context.startActivity(intent)
+                                        } catch (_: Exception) {}
+                                    }
+                                }
+                            ) {
+                                Text(text = "Parent: ${student.parentName} (${student.parentPhone})", color = TextSecondaryColor, fontSize = 10.sp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(Icons.Filled.Call, contentDescription = "Call Parent", tint = GreenAccent, modifier = Modifier.size(11.sp.value.dp))
+                            }
+                            Text(text = "Email: ${student.parentEmail}", color = AccentBlue, fontSize = 10.sp)
+                        }
+                    }
+                    SafiriTag(text = statusLabel, color = statusColor)
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Bus: ${student.assignedBusPlate} • Driver: ${student.assignedDriverName} • Stop: ${student.pickupStop}",
+                    color = TextTertiaryColor,
+                    fontSize = 10.sp
+                )
+
+                if (!student.parentNote.isNullOrBlank()) {
+                    Text(text = "Parent Note: \"${student.parentNote}\"", color = AmberAccent, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                }
+                if (!student.absentReason.isNullOrBlank() && student.status == StudentStatus.ABSENT) {
+                    Text(text = "Absence Reason: ${student.absentReason}", color = RedAccent, fontSize = 10.sp)
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    OutlinedButton(
+                        onClick = {
+                            editingParentStudent = student
+                            editParentNameInput = student.parentName
+                            editParentEmailInput = student.parentEmail
+                            editParentPhoneInput = student.parentPhone
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Icon(Icons.Filled.PersonAdd, contentDescription = "Link Parent", modifier = Modifier.size(12.dp), tint = PurpleAccent)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Link / Change Parent", fontSize = 10.sp, color = PurpleAccent, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
+    // Modal to Link Parent
+    editingParentStudent?.let { student ->
+        AlertDialog(
+            onDismissRequest = { editingParentStudent = null },
+            title = { Text("Link Parent to ${student.name}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimaryColor) },
+            text = {
+                Column {
+                    Text("Link or update parent contact details for student ID: ${student.id}", fontSize = 11.sp, color = TextSecondaryColor)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = editParentNameInput,
+                        onValueChange = { editParentNameInput = it },
+                        label = { Text("Parent Full Name") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editParentEmailInput,
+                        onValueChange = { editParentEmailInput = it },
+                        label = { Text("Parent Email Address") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editParentPhoneInput,
+                        onValueChange = { editParentPhoneInput = it },
+                        label = { Text("Parent Phone (+254)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (editParentNameInput.isNotBlank() && editParentEmailInput.isNotBlank()) {
+                            viewModel.linkStudentToParent(
+                                studentId = student.id,
+                                parentName = editParentNameInput,
+                                parentEmail = editParentEmailInput,
+                                parentPhone = editParentPhoneInput
+                            )
+                            editingParentStudent = null
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PurpleAccent)
+                ) {
+                    Text("Save & Link Parent", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingParentStudent = null }) {
+                    Text("Cancel", color = TextSecondaryColor)
+                }
+            },
+            containerColor = SurfaceColor
+        )
+    }
+
+    if (showAddStudentDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddStudentDialog = false },
+            title = { Text("Register New Student", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimaryColor) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = newStudentName,
+                        onValueChange = { newStudentName = it },
+                        label = { Text("Student Full Name") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newParentName,
+                        onValueChange = { newParentName = it },
+                        label = { Text("Parent Name") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newParentPhone,
+                        onValueChange = { newParentPhone = it },
+                        label = { Text("Parent Phone (+254)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newBusPlate,
+                        onValueChange = { newBusPlate = it },
+                        label = { Text("Assigned Bus Plate") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newStop,
+                        onValueChange = { newStop = it },
+                        label = { Text("Pickup Stop") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newStudentName.isNotBlank() && newParentName.isNotBlank()) {
+                            viewModel.addOrUpdateStudent(
+                                id = null,
+                                name = newStudentName,
+                                parentName = newParentName,
+                                parentPhone = if (newParentPhone.isNotBlank()) newParentPhone else "+254 700 000 000",
+                                busPlate = newBusPlate,
+                                driverName = "Erick Mwangi",
+                                pickupStop = newStop
+                            )
+                            showAddStudentDialog = false
+                            newStudentName = ""
+                            newParentName = ""
+                            newParentPhone = ""
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PurpleAccent)
+                ) {
+                    Text("Register & Sync", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddStudentDialog = false }) {
+                    Text("Cancel", color = TextSecondaryColor)
+                }
+            },
+            containerColor = SurfaceColor
+        )
     }
 }

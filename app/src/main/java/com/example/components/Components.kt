@@ -227,7 +227,301 @@ fun ToggleRow(
     }
 }
 
-// 5. Hero Map Component with Beautiful Nairobi Transit Visualization
+// 5. High-Performance Instant Vector Transit Map (0ms Load Time, Premium Aesthetics)
+@Composable
+fun VectorTransitMap(
+    progressPct: Float,
+    isMultipleBuses: Boolean,
+    multipleBusOffsets: List<Pair<Float, Float>>,
+    stops: List<RouteStop>,
+    modifier: Modifier = Modifier
+) {
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .background(SurfaceColor)
+    ) {
+        val widthDp = maxWidth
+        val heightDp = maxHeight
+        
+        val infiniteTransition = rememberInfiniteTransition(label = "MapPulse")
+        val pulseScale by infiniteTransition.animateFloat(
+            initialValue = 0.7f,
+            targetValue = 1.4f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2400, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "pulseScale"
+        )
+        val pulseAlpha by infiniteTransition.animateFloat(
+            initialValue = 0.6f,
+            targetValue = 0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2400, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "pulseAlpha"
+        )
+        
+        val routeCoords = listOf(
+            -1.2825f to 36.7450f, // Kawangware Stop
+            -1.2800f to 36.7600f,
+            -1.2915f to 36.7845f, // Kilimani (Parent Stop)
+            -1.2880f to 36.7980f,
+            -1.2635f to 36.8040f, // Westlands Stop
+            -1.2720f to 36.7820f, // School (St. Mary's)
+            -1.2985f to 36.8125f  // Upper Hill Stop
+        )
+        
+        val stopsData = listOf(
+            Triple("Kawangware", -1.2825f to 36.7450f, GreenAccent),
+            Triple("Westlands", -1.2635f to 36.8040f, AccentBlue),
+            Triple("Kilimani", -1.2915f to 36.7845f, RedAccent),
+            Triple("Upper Hill", -1.2985f to 36.8125f, AmberAccent),
+            Triple("School Academy", -1.2720f to 36.7820f, PurpleAccent)
+        )
+        
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val widthPx = size.width
+            val heightPx = size.height
+            
+            fun mapToOffset(lat: Float, lng: Float): Offset {
+                val minLat = -1.3030f
+                val maxLat = -1.2580f
+                val minLng = 36.7380f
+                val maxLng = 36.8180f
+                
+                val x = ((lng - minLng) / (maxLng - minLng)) * widthPx
+                val y = ((maxLat - lat) / (maxLat - minLat)) * heightPx
+                return Offset(x, y)
+            }
+            
+            // Draw visual tech-grid system
+            val gridSpacing = 40.dp.toPx()
+            val gridColor = Color(0x0F000000)
+            if (gridSpacing > 1f && widthPx > 0f) {
+                var currentX = 0f
+                while (currentX < widthPx) {
+                    drawLine(gridColor, Offset(currentX, 0f), Offset(currentX, heightPx), strokeWidth = 1.dp.toPx())
+                    currentX += gridSpacing
+                }
+            }
+            if (gridSpacing > 1f && heightPx > 0f) {
+                var currentY = 0f
+                while (currentY < heightPx) {
+                    drawLine(gridColor, Offset(0f, currentY), Offset(widthPx, currentY), strokeWidth = 1.dp.toPx())
+                    currentY += gridSpacing
+                }
+            }
+            
+            // Draw Route Paths
+            val pathPoints = routeCoords.map { mapToOffset(it.first, it.second) }
+            
+            // Neon Glow Layer
+            for (i in 0 until pathPoints.size - 1) {
+                drawLine(
+                    color = AccentBlue.copy(alpha = 0.12f),
+                    start = pathPoints[i],
+                    end = pathPoints[i + 1],
+                    strokeWidth = 12.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+            }
+            
+            // Standard Path Track
+            for (i in 0 until pathPoints.size - 1) {
+                drawLine(
+                    color = Surface3Color,
+                    start = pathPoints[i],
+                    end = pathPoints[i + 1],
+                    strokeWidth = 4.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+            }
+            
+            // Completed Active Progress path
+            val activeSegmentLimit = (pathPoints.size - 1) * progressPct
+            for (i in 0 until pathPoints.size - 1) {
+                if (i < activeSegmentLimit.toInt()) {
+                    drawLine(
+                        color = AccentBlue,
+                        start = pathPoints[i],
+                        end = pathPoints[i + 1],
+                        strokeWidth = 3.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
+                } else if (i == activeSegmentLimit.toInt()) {
+                    val segmentProgress = activeSegmentLimit - i
+                    val interpolatedEnd = Offset(
+                        pathPoints[i].x + (pathPoints[i+1].x - pathPoints[i].x) * segmentProgress,
+                        pathPoints[i].y + (pathPoints[i+1].y - pathPoints[i].y) * segmentProgress
+                    )
+                    drawLine(
+                        color = AccentBlue,
+                        start = pathPoints[i],
+                        end = interpolatedEnd,
+                        strokeWidth = 3.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+            
+            // Draw stops circle highlights and names
+            stopsData.forEach { stop ->
+                val pos = mapToOffset(stop.second.first, stop.second.second)
+                
+                // Pulsing radiant halo
+                drawCircle(
+                    color = stop.third.copy(alpha = pulseAlpha * 0.35f),
+                    radius = 16.dp.toPx() * pulseScale,
+                    center = pos
+                )
+                
+                // Backing
+                drawCircle(
+                    color = BackgroundColor,
+                    radius = 6.dp.toPx(),
+                    center = pos
+                )
+                
+                // Ring border
+                drawCircle(
+                    color = stop.third,
+                    radius = 6.dp.toPx(),
+                    center = pos,
+                    style = Stroke(width = 2.dp.toPx())
+                )
+            }
+            
+            // Draw live bus markers
+            if (!isMultipleBuses) {
+                val busLatLng = getInterpolatedLatLngInKotlin(progressPct)
+                val busPos = mapToOffset(busLatLng.first, busLatLng.second)
+                
+                // Pulse
+                drawCircle(
+                    color = AccentBlue.copy(alpha = pulseAlpha * 0.45f),
+                    radius = 20.dp.toPx() * pulseScale,
+                    center = busPos
+                )
+                
+                // White backing
+                drawCircle(
+                    color = Color.White,
+                    radius = 9.dp.toPx(),
+                    center = busPos
+                )
+                
+                // Blue core
+                drawCircle(
+                    color = AccentBlue,
+                    radius = 7.dp.toPx(),
+                    center = busPos
+                )
+            } else {
+                val adminColors = listOf(AccentBlue, AmberAccent, GreenAccent, PurpleAccent)
+                val activeBusesCount = multipleBusOffsets.size.coerceAtMost(4)
+                for (i in 0 until activeBusesCount) {
+                    val busPct = multipleBusOffsets[i].first
+                    val busColor = adminColors.getOrElse(i) { AccentBlue }
+                    val busLatLng = getInterpolatedLatLngInKotlin(busPct)
+                    val busPos = mapToOffset(busLatLng.first, busLatLng.second)
+                    
+                    drawCircle(
+                        color = busColor.copy(alpha = pulseAlpha * 0.4f),
+                        radius = 16.dp.toPx() * pulseScale,
+                        center = busPos
+                    )
+                    
+                    drawCircle(
+                        color = Color.White,
+                        radius = 8.dp.toPx(),
+                        center = busPos
+                    )
+                    
+                    drawCircle(
+                        color = busColor,
+                        radius = 6.dp.toPx(),
+                        center = busPos
+                    )
+                }
+            }
+        }
+        
+        // Render precise text label overlays that scale cleanly with screen font densities
+        stopsData.forEach { stop ->
+            val minLat = -1.3030f
+            val maxLat = -1.2580f
+            val minLng = 36.7380f
+            val maxLng = 36.8180f
+            
+            val stopLat = stop.second.first
+            val stopLng = stop.second.second
+            
+            val pctX = (stopLng - minLng) / (maxLng - minLng)
+            val pctY = (maxLat - stopLat) / (maxLat - minLat)
+            
+            Box(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                val labelX = widthDp * pctX
+                val labelY = heightDp * pctY
+                
+                Box(
+                    modifier = Modifier
+                        .offset(
+                            x = labelX - 45.dp,
+                            y = labelY - 26.dp
+                        )
+                        .width(90.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Surface2Color.copy(alpha = 0.85f))
+                        .border(1.dp, BorderColor, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = stop.first,
+                        color = TextPrimaryColor,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+fun getInterpolatedLatLngInKotlin(pct: Float): Pair<Float, Float> {
+    val coords = listOf(
+        -1.2825f to 36.7450f, // Kawangware Stop
+        -1.2800f to 36.7600f,
+        -1.2915f to 36.7845f, // Kilimani (Parent Stop)
+        -1.2880f to 36.7980f,
+        -1.2635f to 36.8040f, // Westlands Stop
+        -1.2720f to 36.7820f, // School Academy (St. Mary's)
+        -1.2985f to 36.8125f  // Upper Hill Stop
+    )
+    if (pct <= 0f) return coords.first()
+    if (pct >= 1f) return coords.last()
+    
+    val totalSegments = coords.size - 1
+    val rawSegment = pct * totalSegments
+    val index = rawSegment.toInt().coerceAtMost(totalSegments - 1)
+    val segmentPct = rawSegment - index
+    
+    val p1 = coords[index]
+    val p2 = coords[index + 1]
+    
+    val lat = p1.first + (p2.first - p1.first) * segmentPct
+    val lng = p1.second + (p2.second - p1.second) * segmentPct
+    return Pair(lat, lng)
+}
+
+// 6. Hero Map Component with Beautiful Nairobi Transit Visualization and Instant Vector Toggle
 @Composable
 fun MapHero(
     progressPct: Float, // 0.0 to 1.0 representing the position of the bus along the path
@@ -239,6 +533,7 @@ fun MapHero(
     isMultipleBuses: Boolean = false,
     multipleBusOffsets: List<Pair<Float, Float>> = emptyList() // Custom drift for other buses
 ) {
+    var isVectorMode by remember { mutableStateOf(true) } // Fast vector transit map by default!
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var isLoaded by remember { mutableStateOf(false) }
     var hasError by remember { mutableStateOf(false) }
@@ -281,245 +576,294 @@ fun MapHero(
             .background(SurfaceColor)
             .border(1.dp, BorderColor, RoundedCornerShape(16.dp))
     ) {
-        key(reloadTrigger) {
-            AndroidView(
-                factory = { context ->
-                    try {
-                        val codeCacheDir = java.io.File(context.cacheDir, "WebView/Default/HTTP Cache/Code Cache")
-                        java.io.File(codeCacheDir, "js").mkdirs()
-                        java.io.File(codeCacheDir, "wasm").mkdirs()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                    WebView(context).apply {
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                        settings.javaScriptEnabled = true
-                        settings.domStorageEnabled = true
-                        settings.databaseEnabled = true
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                        }
-                        settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
-                        
-                        webChromeClient = object : android.webkit.WebChromeClient() {
-                            override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
-                                android.util.Log.d("MapWebView", "${consoleMessage?.message()} -- From line ${consoleMessage?.lineNumber()} of ${consoleMessage?.sourceId()}")
-                                return true
-                            }
-                        }
-
-                        webViewClient = object : WebViewClient() {
-                            override fun onPageFinished(view: WebView?, url: String?) {
-                                isLoaded = true
-                                if (isMultipleBuses) {
-                                    evaluateJavascript("initAdminBuses();", null)
-                                } else {
-                                    evaluateJavascript("updateProgress($progressPct);", null)
-                                }
-                            }
-
-                            @Deprecated("Deprecated in Java")
-                            override fun onReceivedError(
-                                view: WebView?,
-                                errorCode: Int,
-                                description: String?,
-                                failingUrl: String?
-                            ) {
-                                hasError = true
-                            }
-
-                            override fun onReceivedError(
-                                view: WebView?,
-                                request: android.webkit.WebResourceRequest?,
-                                error: android.webkit.WebResourceError?
-                            ) {
-                                if (request?.isForMainFrame == true) {
-                                    hasError = true
-                                }
-                            }
-                        }
-                        loadDataWithBaseURL("https://appassets.androidplatform.net", getMapHtml(apiKey), "text/html", "UTF-8", null)
-                        webViewRef = this
-                    }
-                },
+        if (isVectorMode) {
+            VectorTransitMap(
+                progressPct = progressPct,
+                isMultipleBuses = isMultipleBuses,
+                multipleBusOffsets = multipleBusOffsets,
+                stops = stops,
                 modifier = Modifier.fillMaxSize()
             )
-        }
+        } else {
+            key(reloadTrigger) {
+                AndroidView(
+                    factory = { context ->
+                        try {
+                            val codeCacheDir = java.io.File(context.cacheDir, "WebView/Default/HTTP Cache/Code Cache")
+                            java.io.File(codeCacheDir, "js").mkdirs()
+                            java.io.File(codeCacheDir, "wasm").mkdirs()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                        WebView(context).apply {
+                            layoutParams = ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.databaseEnabled = true
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                                settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                            }
+                            settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+                            
+                            webChromeClient = object : android.webkit.WebChromeClient() {
+                                override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                                    android.util.Log.d("MapWebView", "${consoleMessage?.message()} -- From line ${consoleMessage?.lineNumber()} of ${consoleMessage?.sourceId()}")
+                                    return true
+                                }
+                            }
 
-        // 1. Loading Activity Indicator matching transit theme
-        if (!isLoaded && !hasError) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(SurfaceColor),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                            webViewClient = object : WebViewClient() {
+                                override fun onPageFinished(view: WebView?, url: String?) {
+                                    isLoaded = true
+                                    if (isMultipleBuses) {
+                                        evaluateJavascript("initAdminBuses();", null)
+                                    } else {
+                                        evaluateJavascript("updateProgress($progressPct);", null)
+                                    }
+                                }
+
+                                @Deprecated("Deprecated in Java")
+                                override fun onReceivedError(
+                                    view: WebView?,
+                                    errorCode: Int,
+                                    description: String?,
+                                    failingUrl: String?
+                                ) {
+                                    hasError = true
+                                }
+
+                                override fun onReceivedError(
+                                    view: WebView?,
+                                    request: android.webkit.WebResourceRequest?,
+                                    error: android.webkit.WebResourceError?
+                                ) {
+                                    if (request?.isForMainFrame == true) {
+                                        hasError = true
+                                    }
+                                }
+                            }
+                            loadDataWithBaseURL("https://appassets.androidplatform.net", getMapHtml(apiKey), "text/html", "UTF-8", null)
+                            webViewRef = this
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            // 1. Loading Activity Indicator matching transit theme
+            if (!isLoaded && !hasError) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(SurfaceColor),
+                    contentAlignment = Alignment.Center
                 ) {
-                    androidx.compose.material3.CircularProgressIndicator(
-                        color = AccentBlue,
-                        strokeWidth = 3.dp,
-                        modifier = Modifier.size(36.dp)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "Loading Transit Map...",
-                        color = TextPrimaryColor,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Connecting to live GPS tracker...",
-                        color = TextSecondaryColor,
-                        fontSize = 11.sp
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            color = AccentBlue,
+                            strokeWidth = 3.dp,
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Loading Transit Map...",
+                            color = TextPrimaryColor,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Connecting to live GPS tracker...",
+                            color = TextSecondaryColor,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
-        }
 
-        // 2. Beautiful Offline Fallback Layout
-        if (hasError) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(SurfaceColor)
-                    .padding(16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxWidth()
+            // 2. Beautiful Offline Fallback Layout
+            if (hasError) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(SurfaceColor)
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Warning,
-                        contentDescription = "Warning",
-                        tint = AmberAccent,
-                        modifier = Modifier.size(32.dp)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "Connection Offline",
-                        color = TextPrimaryColor,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Map couldn't load correctly.",
-                        color = TextSecondaryColor,
-                        fontSize = 11.sp,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Surface2Color)
-                            .clickable {
-                                hasError = false
-                                isLoaded = false
-                                reloadTrigger++
-                            }
-                            .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Refresh,
-                            contentDescription = "Retry",
-                            tint = AccentBlue,
-                            modifier = Modifier.size(14.dp)
+                            imageVector = Icons.Filled.Warning,
+                            contentDescription = "Warning",
+                            tint = AmberAccent,
+                            modifier = Modifier.size(32.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "Retry Loading",
-                            color = AccentBlue,
-                            fontSize = 11.sp,
+                            text = "Connection Offline",
+                            color = TextPrimaryColor,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
                         )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Map couldn't load correctly.",
+                            color = TextSecondaryColor,
+                            fontSize = 11.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Surface2Color)
+                                .clickable {
+                                    hasError = false
+                                    isLoaded = false
+                                    reloadTrigger++
+                                }
+                                .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = "Retry",
+                                tint = AccentBlue,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Retry Loading",
+                                color = AccentBlue,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
         }
 
-        // Overlay Badges (Top-left & Top-right) - Only visible when map is loaded & no error
-        if (isLoaded && !hasError) {
-            if (!isMultipleBuses) {
-                // Left overlay (Plate + Status)
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(12.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Surface2Color.copy(alpha = 0.9f))
-                        .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(GreenAccent)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "$busPlate • $statusText",
-                        color = TextPrimaryColor,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                // Right overlay (ETA Countdown)
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(12.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(AccentBlue)
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "${etaMinutes}m",
-                        color = BackgroundColor,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Black
-                    )
-                    Text(
-                        text = "ETA",
-                        color = BackgroundColor.copy(alpha = 0.7f),
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            } else {
-                // Admin Map Overlay info
+        // Overlay Badges (Top-left & Top-right) - Always visible on both map styles
+        if (!isMultipleBuses) {
+            // Left overlay (Plate + Status)
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(12.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Surface2Color.copy(alpha = 0.9f))
+                    .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(12.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Surface2Color.copy(alpha = 0.9f))
-                        .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = "4 ACTIVE FLEET BUSES",
-                        color = PurpleAccent,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
-                }
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(GreenAccent)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "$busPlate • $statusText",
+                    color = TextPrimaryColor,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            // Right overlay (ETA Countdown)
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(AccentBlue)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "${etaMinutes}m",
+                    color = BackgroundColor,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Black
+                )
+                Text(
+                    text = "ETA",
+                    color = BackgroundColor.copy(alpha = 0.7f),
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        } else {
+            // Admin Map Overlay info
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(12.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Surface2Color.copy(alpha = 0.9f))
+                    .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "4 ACTIVE FLEET BUSES",
+                    color = PurpleAccent,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+            }
+        }
+
+        // Map Mode Switcher overlay at the bottom right
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(12.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Surface2Color.copy(alpha = 0.9f))
+                .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                .padding(2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (isVectorMode) AccentBlue else Color.Transparent)
+                    .clickable { isVectorMode = true }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "VECTOR",
+                    color = if (isVectorMode) BackgroundColor else TextSecondaryColor,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (!isVectorMode) AccentBlue else Color.Transparent)
+                    .clickable { isVectorMode = false }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "GPS LIVE",
+                    color = if (!isVectorMode) BackgroundColor else TextSecondaryColor,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -535,39 +879,41 @@ private fun getMapHtml(apiKey: String): String {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
     <style>
-        html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #0F1117; }
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #F8FAFC; }
         #map { width: 100%; height: 100%; }
         
-        /* Style InfoWindows for Google Maps dark mode */
+        /* Style InfoWindows for Google Maps light mode */
         .gm-style .gm-style-iw-c {
-            background-color: #1C1F2B !important;
-            border: 1px solid #2F3347 !important;
+            background-color: #FFFFFF !important;
+            border: 1px solid #E2E8F0 !important;
             border-radius: 8px !important;
             padding: 8px !important;
+            color: #0F172A !important;
         }
         .gm-style .gm-style-iw-t::after {
-            background: #1C1F2B !important;
+            background: #FFFFFF !important;
             box-shadow: none !important;
         }
         .gm-style .gm-style-iw-d {
             overflow: hidden !important;
         }
 
-        /* Leaflet custom styling */
-        .leaflet-container { background: #0F1117 !important; }
-        .leaflet-bar a { background-color: #1C1F2B !important; color: #F0F2FF !important; border: none !important; }
-        .leaflet-bar { border: 1px solid #2F3347 !important; box-shadow: none !important; }
+        /* Leaflet custom light styling */
+        .leaflet-container { background: #F8FAFC !important; }
+        .leaflet-bar a { background-color: #FFFFFF !important; color: #0F172A !important; border: none !important; }
+        .leaflet-bar { border: 1px solid #CBD5E1 !important; box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important; }
         .custom-popup .leaflet-popup-content-wrapper {
-            background: #1C1F2B;
-            color: #F0F2FF;
-            border: 1px solid #2F3347;
+            background: #FFFFFF;
+            color: #0F172A;
+            border: 1px solid #E2E8F0;
             border-radius: 8px;
             font-family: sans-serif;
             font-size: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
         }
         .custom-popup .leaflet-popup-tip {
-            background: #1C1F2B;
-            border: 1px solid #2F3347;
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
         }
     </style>
 </head>
@@ -604,24 +950,24 @@ private fun getMapHtml(apiKey: String): String {
             return [c.lat, c.lng];
         });
 
-        var darkMapStyle = [
-            { "elementType": "geometry", "stylers": [{ "color": "#0F1117" }] },
-            { "elementType": "labels.text.stroke", "stylers": [{ "color": "#1C1F2B" }] },
-            { "elementType": "labels.text.fill", "stylers": [{ "color": "#F0F2FF" }] },
-            { "featureType": "administrative.locality", "elementType": "labels.text.fill", "stylers": [{ "color": "#818CF8" }] },
-            { "featureType": "poi", "elementType": "labels.text.fill", "stylers": [{ "color": "#94A3B8" }] },
-            { "featureType": "poi.park", "elementType": "geometry", "stylers": [{ "color": "#15202B" }] },
+        var lightMapStyle = [
+            { "elementType": "geometry", "stylers": [{ "color": "#F8FAFC" }] },
+            { "elementType": "labels.text.stroke", "stylers": [{ "color": "#FFFFFF" }] },
+            { "elementType": "labels.text.fill", "stylers": [{ "color": "#0F172A" }] },
+            { "featureType": "administrative.locality", "elementType": "labels.text.fill", "stylers": [{ "color": "#2563EB" }] },
+            { "featureType": "poi", "elementType": "labels.text.fill", "stylers": [{ "color": "#64748B" }] },
+            { "featureType": "poi.park", "elementType": "geometry", "stylers": [{ "color": "#E2F5EA" }] },
             { "featureType": "poi.park", "elementType": "labels.text.fill", "stylers": [{ "color": "#10B981" }] },
-            { "featureType": "road", "elementType": "geometry", "stylers": [{ "color": "#1E293B" }] },
-            { "featureType": "road", "elementType": "geometry.stroke", "stylers": [{ "color": "#2F3347" }] },
-            { "featureType": "road", "elementType": "labels.text.fill", "stylers": [{ "color": "#94A3B8" }] },
-            { "featureType": "road.highway", "elementType": "geometry", "stylers": [{ "color": "#1C1F2B" }] },
-            { "featureType": "road.highway", "elementType": "geometry.stroke", "stylers": [{ "color": "#2F3347" }] },
-            { "featureType": "road.highway", "elementType": "labels.text.fill", "stylers": [{ "color": "#4F8EF7" }] },
-            { "featureType": "transit", "elementType": "geometry", "stylers": [{ "color": "#1F2937" }] },
-            { "featureType": "transit.station", "elementType": "labels.text.fill", "stylers": [{ "color": "#E0E7FF" }] },
-            { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#0B132B" }] },
-            { "featureType": "water", "elementType": "labels.text.fill", "stylers": [{ "color": "#3B82F6" }] }
+            { "featureType": "road", "elementType": "geometry", "stylers": [{ "color": "#FFFFFF" }] },
+            { "featureType": "road", "elementType": "geometry.stroke", "stylers": [{ "color": "#E2E8F0" }] },
+            { "featureType": "road", "elementType": "labels.text.fill", "stylers": [{ "color": "#475569" }] },
+            { "featureType": "road.highway", "elementType": "geometry", "stylers": [{ "color": "#EFF6FF" }] },
+            { "featureType": "road.highway", "elementType": "geometry.stroke", "stylers": [{ "color": "#BFDBFE" }] },
+            { "featureType": "road.highway", "elementType": "labels.text.fill", "stylers": [{ "color": "#1D4ED8" }] },
+            { "featureType": "transit", "elementType": "geometry", "stylers": [{ "color": "#F1F5F9" }] },
+            { "featureType": "transit.station", "elementType": "labels.text.fill", "stylers": [{ "color": "#1E293B" }] },
+            { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#E0F2FE" }] },
+            { "featureType": "water", "elementType": "labels.text.fill", "stylers": [{ "color": "#0284C7" }] }
         ];
 
         function initGoogleMap() {
@@ -632,7 +978,7 @@ private fun getMapHtml(apiKey: String): String {
             var mapOptions = {
                 center: { lat: -1.2825, lng: 36.7820 },
                 zoom: 13,
-                styles: darkMapStyle,
+                styles: lightMapStyle,
                 disableDefaultUI: true,
                 zoomControl: false,
                 gestureHandling: 'greedy'
@@ -641,7 +987,7 @@ private fun getMapHtml(apiKey: String): String {
 
             stopsData.forEach(function(stop) {
                 var infoWindow = new google.maps.InfoWindow({
-                    content: "<div style='color: #F0F2FF; background: #1C1F2B; padding: 4px; border-radius: 4px; font-family: sans-serif; font-size: 11px;'><b>" + stop.name + "</b></div>",
+                    content: "<div style='color: #0F172A; background: #FFFFFF; padding: 4px; border-radius: 4px; font-family: sans-serif; font-size: 11px;'><b>" + stop.name + "</b></div>",
                     disableAutoPan: true
                 });
 
@@ -651,7 +997,7 @@ private fun getMapHtml(apiKey: String): String {
                     icon: {
                         path: google.maps.SymbolPath.CIRCLE,
                         scale: 7,
-                        fillColor: '#0F1117',
+                        fillColor: '#FFFFFF',
                         fillOpacity: 1,
                         strokeColor: stop.color,
                         strokeWeight: 3
@@ -667,8 +1013,8 @@ private fun getMapHtml(apiKey: String): String {
             var routePath = new google.maps.Polyline({
                 path: routeCoords,
                 geodesic: true,
-                strokeColor: '#4F8EF7',
-                strokeOpacity: 0.7,
+                strokeColor: '#2563EB',
+                strokeOpacity: 0.8,
                 strokeWeight: 5,
                 map: map
             });
@@ -679,7 +1025,7 @@ private fun getMapHtml(apiKey: String): String {
                 icon: {
                     path: google.maps.SymbolPath.CIRCLE,
                     scale: 9,
-                    fillColor: '#4F8EF7',
+                    fillColor: '#2563EB',
                     fillOpacity: 1,
                     strokeColor: '#FFFFFF',
                     strokeWeight: 2
@@ -703,7 +1049,7 @@ private fun getMapHtml(apiKey: String): String {
                     attributionControl: false
                 }).setView([-1.2825, 36.7820], 13);
 
-                L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
                     attribution: '&copy; OpenStreetMap &copy; CARTO',
                     subdomains: 'abcd',
                     maxZoom: 20
@@ -712,7 +1058,7 @@ private fun getMapHtml(apiKey: String): String {
                 stopsData.forEach(function(stop) {
                     L.circleMarker([stop.lat, stop.lng], {
                         radius: 7,
-                        fillColor: '#0F1117',
+                        fillColor: '#FFFFFF',
                         color: stop.color,
                         weight: 3,
                         opacity: 1,

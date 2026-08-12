@@ -25,7 +25,7 @@ class GreetingScreenshotTest {
   fun greeting_screenshot() {
     composeTestRule.setContent {
       MyApplicationTheme {
-        LoginScreen(viewModel = AppViewModel())
+        LoginScreen(viewModel = AppViewModel(org.robolectric.RuntimeEnvironment.getApplication()))
       }
     }
 

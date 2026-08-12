@@ -1,5 +1,7 @@
 package com.example.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -24,6 +27,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.components.*
 import com.example.models.AlertSeverity
+import com.example.models.InterportalMessage
+import com.example.models.JourneyEvent
+import com.example.models.JourneyEventType
+import com.example.models.Student
+import com.example.models.StudentStatus
 import com.example.ui.theme.*
 import com.example.viewmodel.AppViewModel
 import kotlinx.coroutines.delay
@@ -127,29 +135,34 @@ fun ParentHomeTab(viewModel: AppViewModel) {
     val progressPct by viewModel.progressPct.collectAsState()
     val stops by viewModel.routeStops.collectAsState()
 
+    val currentChild by viewModel.currentChild.collectAsState()
+    val journeyEvents by viewModel.journeyEvents.collectAsState()
+    val currentUserName by viewModel.currentUserName.collectAsState()
+
+    val assignedBusPlate = currentChild?.assignedBusPlate ?: "KDE 732X"
+
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
-        // Sticky Map Hero at the top
+        // Sticky Map Hero at the top showing the specific assigned bus
         MapHero(
             progressPct = progress,
-            busPlate = "KDE 732X",
-            statusText = "On Time",
+            busPlate = assignedBusPlate,
+            statusText = "On Route",
             etaMinutes = etaMinutes,
             stops = stops,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(240.dp)
+                .height(220.dp)
         )
 
-        // The rest of the content scrolls independently
+        // Independent scroll view
         ScrollView(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
             contentContainerStyle = Modifier.padding(16.dp)
         ) {
-            // Drag handle bar style representation
             Box(
                 modifier = Modifier
                     .width(40.dp)
@@ -160,6 +173,33 @@ fun ParentHomeTab(viewModel: AppViewModel) {
             )
 
             Spacer(modifier = Modifier.height(12.dp))
+
+            // 1. Child-Specific Greeting Header & Live Boarding Status Card
+            ChildSpecificGreetingCard(
+                child = currentChild,
+                parentName = currentUserName,
+                etaMinutes = etaMinutes,
+                viewModel = viewModel
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // 2. Child Journey Timeline Card (Boarded -> En route -> Arrived at school)
+            ChildJourneyTimelineCard(
+                child = currentChild,
+                events = journeyEvents,
+                etaMinutes = etaMinutes
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // 3. Child's Activity Feed Today Card
+            ChildActivityFeedCard(
+                child = currentChild,
+                events = journeyEvents
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
 
             // Big ETA card
             SafiriCard(testTag = "eta_card") {
@@ -172,48 +212,30 @@ fun ParentHomeTab(viewModel: AppViewModel) {
                         Text(
                             text = "$etaMinutes",
                             color = AccentBlue,
-                            fontSize = 48.sp,
+                            fontSize = 44.sp,
                             fontWeight = FontWeight.Black
                         )
                         Text(
-                            text = " min",
+                            text = " min to school",
                             color = TextSecondaryColor,
-                            fontSize = 20.sp,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(bottom = 8.dp)
                         )
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        SafiriTag(text = "On Time", color = GreenAccent)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(
-                            onClick = { viewModel.signOut() },
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(Surface3Color)
-                                .size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.ExitToApp,
-                                contentDescription = "Sign Out",
-                                tint = RedAccent,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
+                    SafiriTag(text = "On Time", color = GreenAccent)
                 }
                 Text(
-                    text = "Bus arriving at Kilimani stop • Head there now",
+                    text = "Bus $assignedBusPlate is en route to ${currentChild?.schoolName ?: "St. Austin's Academy"}",
                     color = TextPrimaryColor,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(top = 4.dp)
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // Three metric tiles in a row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -239,7 +261,6 @@ fun ParentHomeTab(viewModel: AppViewModel) {
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Route completion progress bar
                 LinearProgressIndicator(
                     progress = { progress },
                     modifier = Modifier
@@ -253,10 +274,30 @@ fun ParentHomeTab(viewModel: AppViewModel) {
 
             Spacer(modifier = Modifier.height(14.dp))
 
+            // Interconnected Real-time Cards
+            ParentSOSAlertCard(viewModel)
+            ParentChildrenSyncCard(viewModel)
+            Spacer(modifier = Modifier.height(14.dp))
+            ParentDriverMessageCard(viewModel)
+            Spacer(modifier = Modifier.height(14.dp))
+
             // Occupancy Section card
             SafiriCard(testTag = "occupancy_card") {
                 OccupancyBar(count = 16, capacity = 22)
             }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Integrated Real-Time Transit Features
+            LiveNavigationGuideCard(viewModel)
+            Spacer(modifier = Modifier.height(12.dp))
+            LiveCrowdDensityCard(viewModel)
+            Spacer(modifier = Modifier.height(12.dp))
+            PlatformAndTransferCard(viewModel)
+            Spacer(modifier = Modifier.height(12.dp))
+            CommunityIncidentFeedCard(viewModel)
+            Spacer(modifier = Modifier.height(12.dp))
+            LiveJourneyShareCard(viewModel)
 
             Spacer(modifier = Modifier.height(14.dp))
 
@@ -795,6 +836,7 @@ fun FleetMiniBar(plate: String, occupancy: String, progress: Float, color: Color
 // ==========================================
 @Composable
 fun ParentMeTab(viewModel: AppViewModel) {
+    val context = LocalContext.current
     val t1 by viewModel.toggleTenMin.collectAsState()
     val t2 by viewModel.toggleChildBoarded.collectAsState()
     val t3 by viewModel.toggleDelayWarning.collectAsState()
@@ -857,7 +899,24 @@ fun ParentMeTab(viewModel: AppViewModel) {
                 )
             }
             Spacer(modifier = Modifier.height(4.dp))
-            Text(text = parentPhone, color = TextSecondaryColor, fontSize = 12.sp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable {
+                    val clean = parentPhone.replace(" ", "").replace("-", "")
+                    if (clean.isNotBlank()) {
+                        try {
+                            val intent = Intent(Intent.ACTION_DIAL).apply {
+                                data = Uri.parse("tel:$clean")
+                            }
+                            context.startActivity(intent)
+                        } catch (_: Exception) {}
+                    }
+                }
+            ) {
+                Text(text = parentPhone, color = TextSecondaryColor, fontSize = 12.sp)
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(Icons.Filled.Phone, contentDescription = "Call", tint = GreenAccent, modifier = Modifier.size(12.dp))
+            }
             if (currentUserEmail != null) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(text = currentUserEmail ?: "", color = TextTertiaryColor, fontSize = 11.sp)
@@ -1052,5 +1111,866 @@ fun TripHistoryRow(date: String, duration: String, delay: String, color: Color) 
             Text(text = duration, color = TextSecondaryColor, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
         }
         SafiriTag(text = delay, color = color)
+    }
+}
+
+@Composable
+fun ParentSOSAlertCard(viewModel: AppViewModel) {
+    val sosActive by viewModel.sosActive.collectAsState()
+    if (sosActive) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(RedAccent.copy(alpha = 0.2f))
+                .border(2.dp, RedAccent, RoundedCornerShape(16.dp))
+                .padding(16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Warning, contentDescription = "Emergency", tint = RedAccent, modifier = Modifier.size(24.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "CRITICAL EMERGENCY SOS ACTIVE",
+                    color = RedAccent,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Black
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Bus KDE 732X driver triggered emergency assistance. School admin dispatch notified and tracking live.",
+                color = TextPrimaryColor,
+                fontSize = 12.sp
+            )
+        }
+        Spacer(modifier = Modifier.height(14.dp))
+    }
+}
+
+@Composable
+fun ParentChildrenSyncCard(viewModel: AppViewModel) {
+    val students by viewModel.students.collectAsState()
+    val currentUserEmail by viewModel.currentUser.collectAsState()
+    val currentUserName by viewModel.currentUserName.collectAsState()
+
+    val parentStudentLinks by viewModel.parentStudentLinks.collectAsState()
+    val currentChild by viewModel.currentChild.collectAsState()
+
+    // Filter children strictly for this parent - NEVER show other parents' kids!
+    val parentChildren = remember(students, currentUserEmail, currentUserName, parentStudentLinks, currentChild) {
+        val list = students.filter { st ->
+            (currentUserEmail != null && st.parentEmail.equals(currentUserEmail, ignoreCase = true)) ||
+            (currentUserName.isNotBlank() && st.parentName.contains(currentUserName, ignoreCase = true)) ||
+            parentStudentLinks.any { it.parentId.equals(currentUserEmail, ignoreCase = true) && it.studentId == st.id }
+        }
+        if (list.isNotEmpty()) {
+            list
+        } else if (currentChild != null && (currentUserEmail == null || currentChild?.parentEmail.equals(currentUserEmail, ignoreCase = true) || currentUserEmail.equals("parent@safiri.co.ke", ignoreCase = true))) {
+            listOf(currentChild!!)
+        } else {
+            emptyList()
+        }
+    }
+
+    var showAbsentDialogForStudent by remember { mutableStateOf<Student?>(null) }
+    var absentReasonInput by remember { mutableStateOf("Medical appointment") }
+
+    var showNoteDialogForStudent by remember { mutableStateOf<Student?>(null) }
+    var noteInput by remember { mutableStateOf("") }
+
+    var showLinkChildDialog by remember { mutableStateOf(false) }
+
+    SafiriCard(testTag = "parent_children_card") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "MY CHILDREN & LIVE BOARDING SYNC",
+                    color = TextTertiaryColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+                Text(
+                    text = "Real-time sync with Driver & Admin",
+                    color = TextSecondaryColor,
+                    fontSize = 11.sp
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SafiriTag(text = "Connected", color = GreenAccent)
+                Spacer(modifier = Modifier.width(6.dp))
+                Button(
+                    onClick = { showLinkChildDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.height(28.dp),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "Link", modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text("Link Child", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (parentChildren.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "No child currently linked to your profile",
+                    color = TextSecondaryColor,
+                    fontSize = 12.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Click 'Link Child' above to connect your student",
+                    color = TextTertiaryColor,
+                    fontSize = 11.sp
+                )
+            }
+        } else {
+            parentChildren.forEach { child ->
+            val statusColor = when (child.status) {
+                StudentStatus.BOARDED -> GreenAccent
+                StudentStatus.DROPPED_OFF -> AccentBlue
+                StudentStatus.ABSENT -> RedAccent
+                StudentStatus.NOT_BOARDED -> AmberAccent
+            }
+            val statusLabel = when (child.status) {
+                StudentStatus.BOARDED -> "ON BUS (${child.boardedTime ?: "7:14 AM"})"
+                StudentStatus.DROPPED_OFF -> "ARRIVED AT SCHOOL"
+                StudentStatus.ABSENT -> "MARKED ABSENT TODAY"
+                StudentStatus.NOT_BOARDED -> "WAITING AT STOP"
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Surface3Color)
+                    .padding(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(child.avatarColor.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(text = child.initials, color = child.avatarColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(text = child.name, color = TextPrimaryColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "Bus ${child.assignedBusPlate} • ${child.assignedDriverName}", color = TextSecondaryColor, fontSize = 11.sp)
+                            Text(text = "Linked Parent: ${child.parentName} (${child.parentEmail})", color = GreenAccent, fontSize = 10.sp)
+                        }
+                    }
+                    SafiriTag(text = statusLabel, color = statusColor)
+                }
+
+                if (!child.parentNote.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Note to driver: \"${child.parentNote}\"",
+                        color = AmberAccent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                if (!child.absentReason.isNullOrBlank() && child.status == StudentStatus.ABSENT) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Absent Reason: ${child.absentReason}",
+                        color = RedAccent,
+                        fontSize = 11.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            showNoteDialogForStudent = child
+                            noteInput = child.parentNote ?: ""
+                        },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(30.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Filled.EditNote, contentDescription = "Note", modifier = Modifier.size(14.dp), tint = AccentBlue)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Note to Driver", fontSize = 10.sp, color = AccentBlue)
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Button(
+                        onClick = {
+                            showAbsentDialogForStudent = child
+                            absentReasonInput = child.absentReason ?: "Medical appointment"
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = if (child.status == StudentStatus.ABSENT) RedAccent.copy(alpha = 0.3f) else RedAccent),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(30.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(if (child.status == StudentStatus.ABSENT) "Edit Absence" else "Mark Absent", fontSize = 10.sp, color = BackgroundColor, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+    }
+
+    // Dialog for Marking Absent
+    showAbsentDialogForStudent?.let { child ->
+        AlertDialog(
+            onDismissRequest = { showAbsentDialogForStudent = null },
+            title = { Text("Mark ${child.name} Absent Today", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimaryColor) },
+            text = {
+                Column {
+                    Text("This will immediately notify Driver ${child.assignedDriverName} and School Admin.", fontSize = 12.sp, color = TextSecondaryColor)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = absentReasonInput,
+                        onValueChange = { absentReasonInput = it },
+                        label = { Text("Reason for absence") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.setStudentAbsentByParent(child.id, absentReasonInput)
+                        showAbsentDialogForStudent = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = RedAccent)
+                ) {
+                    Text("Confirm Absence", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAbsentDialogForStudent = null }) {
+                    Text("Cancel", color = TextSecondaryColor)
+                }
+            },
+            containerColor = SurfaceColor
+        )
+    }
+
+    // Dialog for Parent Note
+    showNoteDialogForStudent?.let { child ->
+        AlertDialog(
+            onDismissRequest = { showNoteDialogForStudent = null },
+            title = { Text("Note for Driver ${child.assignedDriverName}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimaryColor) },
+            text = {
+                Column {
+                    Text("Send a quick note regarding ${child.name} for Bus ${child.assignedBusPlate}.", fontSize = 12.sp, color = TextSecondaryColor)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = noteInput,
+                        onValueChange = { noteInput = it },
+                        label = { Text("e.g. Will arrive 3 mins late at Kilimani Stop") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.addParentNoteForDriver(child.id, noteInput)
+                        showNoteDialogForStudent = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentBlue)
+                ) {
+                    Text("Send Note", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNoteDialogForStudent = null }) {
+                    Text("Cancel", color = TextSecondaryColor)
+                }
+            },
+            containerColor = SurfaceColor
+        )
+    }
+
+    // Dialog for Linking a Child to Parent Profile
+    if (showLinkChildDialog) {
+        AlertDialog(
+            onDismissRequest = { showLinkChildDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.PersonAdd, contentDescription = "Link Child", tint = AccentBlue)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Link Child to Your Profile", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimaryColor)
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "Select any student registered in the school system to link to your parent account ($currentUserName):",
+                        fontSize = 12.sp,
+                        color = TextSecondaryColor
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    students.forEach { st ->
+                        val isAlreadyLinked = st.parentEmail.equals(currentUserEmail ?: "", ignoreCase = true) ||
+                                st.parentName.contains(currentUserName, ignoreCase = true) ||
+                                parentChildren.any { it.id == st.id }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Surface3Color)
+                                .padding(10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(st.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimaryColor)
+                                Text("Bus: ${st.assignedBusPlate} • Stop: ${st.pickupStop}", fontSize = 10.sp, color = TextSecondaryColor)
+                                Text("Current Parent: ${st.parentName}", fontSize = 10.sp, color = TextTertiaryColor)
+                            }
+                            if (isAlreadyLinked) {
+                                SafiriTag(text = "Linked ✓", color = GreenAccent)
+                            } else {
+                                Button(
+                                    onClick = {
+                                        viewModel.linkChildToCurrentParent(st.id)
+                                        showLinkChildDialog = false
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(28.dp),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text("Link Child", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showLinkChildDialog = false }) {
+                    Text("Close", color = TextSecondaryColor)
+                }
+            },
+            containerColor = SurfaceColor
+        )
+    }
+}
+
+@Composable
+fun ParentDriverMessageCard(viewModel: AppViewModel) {
+    val messages by viewModel.interportalMessages.collectAsState()
+    val currentUserName by viewModel.currentUserName.collectAsState()
+    var messageText by remember { mutableStateOf("") }
+
+    SafiriCard(testTag = "parent_driver_messages") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Forum, contentDescription = "Messages", tint = AccentBlue, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "DRIVER & ADMIN MESSAGES",
+                    color = TextPrimaryColor,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            SafiriTag(text = "${messages.size} Messages", color = AccentBlue)
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        messages.take(4).forEach { msg ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Surface3Color)
+                    .padding(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = msg.senderName, color = TextPrimaryColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(text = msg.timestamp, color = TextTertiaryColor, fontSize = 9.sp)
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(text = msg.content, color = TextSecondaryColor, fontSize = 11.sp)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = messageText,
+                onValueChange = { messageText = it },
+                placeholder = { Text("Message driver or admin...", fontSize = 11.sp) },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp),
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = {
+                    if (messageText.isNotBlank()) {
+                        viewModel.sendInterportalMessage(
+                            senderName = "$currentUserName (Parent)",
+                            senderRole = "PARENT",
+                            recipientRole = "DRIVER",
+                            targetBusPlate = "KDE 732X",
+                            content = messageText
+                        )
+                        messageText = ""
+                    }
+                },
+                modifier = Modifier.height(40.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Filled.Send, contentDescription = "Send", modifier = Modifier.size(16.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun ChildSpecificGreetingCard(
+    child: Student?,
+    parentName: String,
+    etaMinutes: Int,
+    viewModel: AppViewModel
+) {
+    val childName = child?.name ?: "your child"
+    val parentFirstName = parentName.split(" ").firstOrNull() ?: parentName
+    val busPlate = child?.assignedBusPlate ?: "KDE 732X"
+    val grade = child?.classGrade ?: "Grade 3"
+    val school = child?.schoolName ?: "St. Austin's Academy"
+    val pickupStop = child?.pickupStop ?: "Kawangware Stop"
+
+    SafiriCard(testTag = "child_greeting_card") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background((child?.avatarColor ?: AccentBlue).copy(alpha = 0.2f))
+                        .border(2.dp, child?.avatarColor ?: AccentBlue, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = child?.initials ?: "LO",
+                        color = child?.avatarColor ?: AccentBlue,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Good morning, $parentFirstName",
+                        color = TextSecondaryColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "$childName is on the way",
+                        color = TextPrimaryColor,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            IconButton(
+                onClick = { viewModel.signOut() },
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(Surface3Color)
+                    .size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ExitToApp,
+                    contentDescription = "Sign Out",
+                    tint = RedAccent,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Student & Bus Info Pills
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Surface3Color)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "Bus $busPlate",
+                    color = AccentBlue,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Surface3Color)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "$grade • $school",
+                    color = TextSecondaryColor,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Live Boarding Status Badge
+        val (statusText, statusColor) = when (child?.status) {
+            StudentStatus.BOARDED -> Pair("Boarded at $pickupStop • ${child.boardedTime ?: "07:12 AM"}", GreenAccent)
+            StudentStatus.DROPPED_OFF -> Pair("Arrived safely at $school", AccentBlue)
+            StudentStatus.ABSENT -> Pair("Marked ABSENT today", RedAccent)
+            else -> Pair("Waiting for Bus at $pickupStop • Pickup Soon", AmberAccent)
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(statusColor.copy(alpha = 0.15f))
+                .border(1.dp, statusColor.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (child?.status == StudentStatus.BOARDED || child?.status == StudentStatus.DROPPED_OFF) Icons.Filled.CheckCircle else Icons.Filled.Schedule,
+                contentDescription = "Status",
+                tint = statusColor,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "LIVE BOARDING STATUS",
+                    color = statusColor,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+                Text(
+                    text = statusText,
+                    color = TextPrimaryColor,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ChildJourneyTimelineCard(
+    child: Student?,
+    events: List<JourneyEvent>,
+    etaMinutes: Int
+) {
+    val childName = child?.name ?: "Child"
+    val school = child?.schoolName ?: "St. Austin's Academy"
+    val stop = child?.pickupStop ?: "Kawangware Stop"
+    val isBoarded = child?.status == StudentStatus.BOARDED
+    val isArrived = child?.status == StudentStatus.DROPPED_OFF
+    val boardedTime = child?.boardedTime ?: "07:12 AM"
+
+    SafiriCard(testTag = "journey_timeline_card") {
+        Text(
+            text = "${childName.uppercase()}'S JOURNEY TIMELINE",
+            color = TextTertiaryColor,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.5.sp
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Step 1: Boarded
+        TimelineRow(
+            title = "1. Boarded Bus",
+            subtitle = if (isBoarded || isArrived) "Boarded at $stop • $boardedTime" else "Waiting at $stop",
+            isCompleted = isBoarded || isArrived,
+            isActive = child?.status == StudentStatus.NOT_BOARDED,
+            timeStr = if (isBoarded || isArrived) boardedTime else "Scheduled 07:10 AM"
+        )
+
+        // Step 2: En Route
+        TimelineRow(
+            title = "2. En Route to School",
+            subtitle = if (isArrived) "Completed route on Ngong Road" else if (isBoarded) "In transit • $etaMinutes mins to $school" else "Pending boarding",
+            isCompleted = isArrived,
+            isActive = isBoarded,
+            timeStr = if (isBoarded) "In Transit" else "Pending"
+        )
+
+        // Step 3: Arrived at School
+        TimelineRow(
+            title = "3. Arrived at $school",
+            subtitle = if (isArrived) "Safely checked in at school gate" else "ETA ~$etaMinutes mins",
+            isCompleted = isArrived,
+            isActive = false,
+            timeStr = if (isArrived) "07:35 AM" else "Est. 07:35 AM",
+            isLast = true
+        )
+    }
+}
+
+@Composable
+fun TimelineRow(
+    title: String,
+    subtitle: String,
+    isCompleted: Boolean,
+    isActive: Boolean,
+    timeStr: String,
+    isLast: Boolean = false
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(end = 12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(
+                        when {
+                            isCompleted -> GreenAccent
+                            isActive -> AccentBlue
+                            else -> Surface3Color
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isCompleted) {
+                    Icon(
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = "Done",
+                        tint = BackgroundColor,
+                        modifier = Modifier.size(14.dp)
+                    )
+                } else if (isActive) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(BackgroundColor)
+                    )
+                }
+            }
+
+            if (!isLast) {
+                Box(
+                    modifier = Modifier
+                        .width(2.dp)
+                        .height(36.dp)
+                        .background(if (isCompleted) GreenAccent else Surface3Color)
+                )
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(bottom = if (isLast) 0.dp else 12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = title,
+                    color = if (isCompleted || isActive) TextPrimaryColor else TextSecondaryColor,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = timeStr,
+                    color = if (isCompleted) GreenAccent else if (isActive) AccentBlue else TextTertiaryColor,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Text(
+                text = subtitle,
+                color = TextSecondaryColor,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun ChildActivityFeedCard(
+    child: Student?,
+    events: List<JourneyEvent>
+) {
+    val childName = child?.name ?: "Child"
+    val studentEvents = events.filter { child == null || it.studentId == child.id }
+
+    SafiriCard(testTag = "child_activity_feed_card") {
+        Text(
+            text = "${childName.uppercase()}'S ACTIVITY TODAY",
+            color = TextTertiaryColor,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.5.sp
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (studentEvents.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No activity yet today",
+                    color = TextTertiaryColor,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        } else {
+            studentEvents.take(5).forEach { ev ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Surface3Color)
+                        .padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val (icon, tint) = when (ev.eventType) {
+                        JourneyEventType.BOARDED -> Pair(Icons.Filled.DirectionsBus, GreenAccent)
+                        JourneyEventType.ARRIVED_SCHOOL -> Pair(Icons.Filled.School, AccentBlue)
+                        JourneyEventType.ALIGHTED -> Pair(Icons.Filled.Home, PurpleAccent)
+                        else -> Pair(Icons.Filled.AltRoute, AmberAccent)
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(tint.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(imageVector = icon, contentDescription = "Event", tint = tint, modifier = Modifier.size(18.dp))
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = ev.notes ?: "Activity recorded at ${ev.stopName}",
+                            color = TextPrimaryColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "${ev.stopName} • Bus ${ev.busPlate}",
+                            color = TextSecondaryColor,
+                            fontSize = 10.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = ev.timestamp,
+                            color = TextSecondaryColor,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        SafiriTag(
+                            text = when (ev.eventType) {
+                                JourneyEventType.BOARDED -> "Boarded"
+                                JourneyEventType.ARRIVED_SCHOOL -> "Arrived"
+                                JourneyEventType.ALIGHTED -> "Alighted"
+                                else -> "En Route"
+                            },
+                            color = tint
+                        )
+                    }
+                }
+            }
+        }
     }
 }

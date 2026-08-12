@@ -1,5 +1,7 @@
 package com.example.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,12 +19,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.components.*
+import com.example.models.InterportalMessage
+import com.example.models.StudentStatus
 import com.example.ui.theme.*
 import com.example.viewmodel.AppViewModel
 
@@ -297,6 +302,7 @@ fun DriverRouteTab(viewModel: AppViewModel) {
 // ==========================================
 @Composable
 fun DriverBoardingTab(viewModel: AppViewModel) {
+    val context = LocalContext.current
     val students by viewModel.students.collectAsState()
     val boardedCount by viewModel.boardedCount.collectAsState()
     val kilimaniComplete by viewModel.kilimaniComplete.collectAsState()
@@ -364,57 +370,173 @@ fun DriverBoardingTab(viewModel: AppViewModel) {
             Spacer(modifier = Modifier.height(12.dp))
 
             students.forEach { student ->
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(vertical = 8.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Surface3Color)
+                        .padding(12.dp)
                 ) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Colored initial avatar
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(student.avatarColor.copy(alpha = 0.15f))
-                                .border(1.dp, student.avatarColor.copy(alpha = 0.5f), CircleShape),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Text(
-                                text = student.initials,
-                                color = student.avatarColor,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(student.avatarColor.copy(alpha = 0.15f))
+                                    .border(1.dp, student.avatarColor.copy(alpha = 0.5f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = student.initials,
+                                    color = student.avatarColor,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = student.name,
+                                    color = TextPrimaryColor,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                 Row(
+                                     verticalAlignment = Alignment.CenterVertically,
+                                     modifier = Modifier.clickable {
+                                         val cleanPhone = student.parentPhone.replace(" ", "").replace("-", "")
+                                         if (cleanPhone.isNotBlank()) {
+                                             try {
+                                                 val intent = Intent(Intent.ACTION_DIAL).apply {
+                                                     data = Uri.parse("tel:$cleanPhone")
+                                                 }
+                                                 context.startActivity(intent)
+                                             } catch (_: Exception) {}
+                                         }
+                                     }
+                                 ) {
+                                     Text(
+                                         text = "Parent: ${student.parentName} (${student.parentPhone}) • ${student.pickupStop}",
+                                         color = TextSecondaryColor,
+                                         fontSize = 11.sp
+                                     )
+                                     Spacer(modifier = Modifier.width(4.dp))
+                                     Icon(
+                                         imageVector = Icons.Filled.Call,
+                                         contentDescription = "Call Parent",
+                                         tint = GreenAccent,
+                                         modifier = Modifier.size(12.dp)
+                                     )
+                                 }
+                            }
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = student.name,
-                            color = TextPrimaryColor,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
+
+                        val tagColor = when (student.status) {
+                            StudentStatus.BOARDED -> GreenAccent
+                            StudentStatus.DROPPED_OFF -> AccentBlue
+                            StudentStatus.ABSENT -> RedAccent
+                            StudentStatus.NOT_BOARDED -> AmberAccent
+                        }
+                        val tagText = when (student.status) {
+                            StudentStatus.BOARDED -> "Boarded ✓"
+                            StudentStatus.DROPPED_OFF -> "Dropped Off"
+                            StudentStatus.ABSENT -> "ABSENT"
+                            StudentStatus.NOT_BOARDED -> "Waiting"
+                        }
+                        SafiriTag(text = tagText, color = tagColor)
                     }
 
-                    if (student.boarded) {
-                        SafiriTag(text = "Boarded ✓", color = GreenAccent)
-                    } else {
-                        Button(
-                            onClick = { viewModel.boardStudent(student.id) },
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                            modifier = Modifier.height(32.dp),
-                            shape = RoundedCornerShape(8.dp)
+                    if (!student.parentNote.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(AmberAccent.copy(alpha = 0.15f))
+                                .border(1.dp, AmberAccent.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                .padding(8.dp)
                         ) {
-                            Text("Board", color = BackgroundColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "Note from Parent: \"${student.parentNote}\"",
+                                color = AmberAccent,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    if (!student.absentReason.isNullOrBlank() && student.status == StudentStatus.ABSENT) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(RedAccent.copy(alpha = 0.15f))
+                                .border(1.dp, RedAccent.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                .padding(8.dp)
+                        ) {
+                            Text(
+                                text = "Parent marked ABSENT: ${student.absentReason}",
+                                color = RedAccent,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        if (student.status != StudentStatus.BOARDED) {
+                            Button(
+                                onClick = { viewModel.updateStudentStatus(student.id, StudentStatus.BOARDED) },
+                                colors = ButtonDefaults.buttonColors(containerColor = GreenAccent),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Board Student", color = BackgroundColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+
+                        if (student.status == StudentStatus.BOARDED) {
+                            Button(
+                                onClick = { viewModel.updateStudentStatus(student.id, StudentStatus.DROPPED_OFF) },
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Arrived / Drop Off", color = BackgroundColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+
+                        if (student.status != StudentStatus.NOT_BOARDED) {
+                            OutlinedButton(
+                                onClick = { viewModel.updateStudentStatus(student.id, StudentStatus.NOT_BOARDED) },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Reset", fontSize = 11.sp, color = TextSecondaryColor)
+                            }
                         }
                     }
                 }
-                HorizontalDivider(color = BorderColor)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
