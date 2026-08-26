@@ -1,35 +1,51 @@
 package com.example.ui.theme
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.CompositionLocalProvider
 
 private val DarkColorScheme =
   darkColorScheme(
-    primary = AccentBlue,
-    secondary = PurpleAccent,
-    tertiary = GreenAccent,
-    background = BackgroundColor,
-    surface = SurfaceColor,
-    onPrimary = BackgroundColor,
-    onSecondary = BackgroundColor,
-    onBackground = TextPrimaryColor,
-    onSurface = TextPrimaryColor
+    primary = DarkSafiriColors.accentBlue,
+    secondary = DarkSafiriColors.moovitOrange,
+    tertiary = DarkSafiriColors.greenAccent,
+    background = DarkSafiriColors.background,
+    surface = DarkSafiriColors.surface,
+    surfaceVariant = DarkSafiriColors.surface2,
+    onPrimary = DarkSafiriColors.background,
+    onSecondary = DarkSafiriColors.background,
+    onBackground = DarkSafiriColors.textPrimary,
+    onSurface = DarkSafiriColors.textPrimary
+  )
+
+private val LightColorScheme =
+  lightColorScheme(
+    primary = LightSafiriColors.accentBlue,
+    secondary = LightSafiriColors.moovitOrange,
+    tertiary = LightSafiriColors.greenAccent,
+    background = LightSafiriColors.background,
+    surface = LightSafiriColors.surface,
+    surfaceVariant = LightSafiriColors.surface3,
+    onPrimary = LightSafiriColors.surface,
+    onSecondary = LightSafiriColors.surface,
+    onBackground = LightSafiriColors.textPrimary,
+    onSurface = LightSafiriColors.textPrimary
   )
 
 @Composable
 fun MyApplicationTheme(
-  darkTheme: Boolean = true, // Force dark theme for Safiri
-  dynamicColor: Boolean = false, // Disable dynamic colors to keep Transit App styling intact
+  darkTheme: Boolean = isSystemInDarkTheme(),
+  dynamicColor: Boolean = false,
   content: @Composable () -> Unit,
 ) {
-  val colorScheme = DarkColorScheme
+  val safiriColors = if (darkTheme) DarkSafiriColors else LightSafiriColors
+  val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
-  MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+  CompositionLocalProvider(LocalSafiriColors provides safiriColors) {
+    MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+  }
 }
+

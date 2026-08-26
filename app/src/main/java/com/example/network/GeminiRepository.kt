@@ -23,7 +23,16 @@ object GeminiRepository {
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
+    private var customApiKey: String? = null
+
+    fun setCustomApiKey(key: String) {
+        customApiKey = key.trim()
+    }
+
     private fun getApiKey(): String {
+        if (!customApiKey.isNull_or_blank()) {
+            return customApiKey!!
+        }
         val key = BuildConfig.GEMINI_API_KEY
         return if (key.isNull_or_blank() || key == "MY_GEMINI_API_KEY") {
             ""

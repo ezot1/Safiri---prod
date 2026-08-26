@@ -181,6 +181,34 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _starredStops = MutableStateFlow<Set<String>>(setOf("Kilimani", "St. Mary's Academy"))
     val starredStops: StateFlow<Set<String>> = _starredStops.asStateFlow()
 
+    // --- MOOVIT TRANSIT INTEGRATION STATE (Lines, Timetables, Nearby Stations, Multi-Modal Plans & Live Guidance) ---
+    private val _transitLines = MutableStateFlow<List<TransitLine>>(emptyList())
+    val transitLines: StateFlow<List<TransitLine>> = _transitLines.asStateFlow()
+
+    private val _selectedTransitLine = MutableStateFlow<TransitLine?>(null)
+    val selectedTransitLine: StateFlow<TransitLine?> = _selectedTransitLine.asStateFlow()
+
+    private val _savedFavoriteLines = MutableStateFlow<Set<String>>(setOf("line_732", "line_44"))
+    val savedFavoriteLines: StateFlow<Set<String>> = _savedFavoriteLines.asStateFlow()
+
+    private val _nearbyStations = MutableStateFlow<List<NearbyStation>>(emptyList())
+    val nearbyStations: StateFlow<List<NearbyStation>> = _nearbyStations.asStateFlow()
+
+    private val _savedStationIds = MutableStateFlow<Set<String>>(setOf("st_1", "st_3"))
+    val savedStationIds: StateFlow<Set<String>> = _savedStationIds.asStateFlow()
+
+    private val _multiModalPlans = MutableStateFlow<List<MultiModalPlan>>(emptyList())
+    val multiModalPlans: StateFlow<List<MultiModalPlan>> = _multiModalPlans.asStateFlow()
+
+    private val _activeLiveGuidance = MutableStateFlow<MultiModalPlan?>(null)
+    val activeLiveGuidance: StateFlow<MultiModalPlan?> = _activeLiveGuidance.asStateFlow()
+
+    private val _currentLiveStepIndex = MutableStateFlow(0)
+    val currentLiveStepIndex: StateFlow<Int> = _currentLiveStepIndex.asStateFlow()
+
+    private val _liveGuidanceAlightAlertFired = MutableStateFlow(false)
+    val liveGuidanceAlightAlertFired: StateFlow<Boolean> = _liveGuidanceAlightAlertFired.asStateFlow()
+
     // --- GLOBAL TRANSIT APPS INTEGRATION STATE (Citymapper, Transit, Moovit, DB Navigator, Grab) ---
     private val _crowdednessLevel = MutableStateFlow("Seats Available")
     val crowdednessLevel: StateFlow<String> = _crowdednessLevel.asStateFlow()
@@ -293,6 +321,57 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _invoiceHistory = MutableStateFlow<List<InvoiceItem>>(emptyList())
     val invoiceHistory: StateFlow<List<InvoiceItem>> = _invoiceHistory.asStateFlow()
 
+    // --- THEME MODE (DARK / LIGHT / SYSTEM) ---
+    private val _themeMode = MutableStateFlow<AppThemeMode>(AppThemeMode.DARK)
+    val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: AppThemeMode) {
+        _themeMode.value = mode
+    }
+
+    fun toggleThemeMode() {
+        _themeMode.value = if (_themeMode.value == AppThemeMode.DARK) AppThemeMode.LIGHT else AppThemeMode.DARK
+    }
+
+    // --- GOOGLE MAPS & GEMINI API KEY INTEGRATION ---
+    private val _mapsApiKey = MutableStateFlow<String>(
+        try {
+            val key = com.example.BuildConfig.GOOGLE_MAPS_API_KEY
+            if (key.isNullOrBlank() || key == "MY_GOOGLE_MAPS_API_KEY") "" else key
+        } catch (e: Exception) {
+            ""
+        }
+    )
+    val mapsApiKey: StateFlow<String> = _mapsApiKey.asStateFlow()
+
+    private val _geminiApiKey = MutableStateFlow<String>(
+        try {
+            val key = com.example.BuildConfig.GEMINI_API_KEY
+            if (key.isNullOrBlank() || key == "MY_GEMINI_API_KEY") "" else key
+        } catch (e: Exception) {
+            ""
+        }
+    )
+    val geminiApiKey: StateFlow<String> = _geminiApiKey.asStateFlow()
+
+    private val _apiKeySavedToast = MutableStateFlow<String?>(null)
+    val apiKeySavedToast: StateFlow<String?> = _apiKeySavedToast.asStateFlow()
+
+    fun updateMapsApiKey(newKey: String) {
+        _mapsApiKey.value = newKey.trim()
+        _apiKeySavedToast.value = "Google Maps API Key configured successfully!"
+    }
+
+    fun updateGeminiApiKey(newKey: String) {
+        _geminiApiKey.value = newKey.trim()
+        com.example.network.GeminiRepository.setCustomApiKey(newKey.trim())
+        _apiKeySavedToast.value = "Gemini API Key configured successfully!"
+    }
+
+    fun dismissApiKeyToast() {
+        _apiKeySavedToast.value = null
+    }
+
     // Job holding the simulation tick loop
     private var simulationJob: Job? = null
     private var adminDriftTicks = 0f
@@ -373,7 +452,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 id = "1",
                 name = "Brian Kamau",
                 initials = "BK",
-                avatarColor = AccentBlue,
+                avatarColor = DefaultAccentBlue,
                 parentName = "Sarah Ochieng",
                 parentEmail = "parent@safiri.co.ke",
                 parentPhone = "0712345678",
@@ -387,7 +466,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 id = "2",
                 name = "Zara Mwangi",
                 initials = "ZM",
-                avatarColor = GreenAccent,
+                avatarColor = DefaultGreenAccent,
                 parentName = "Sarah Ochieng",
                 parentEmail = "parent@safiri.co.ke",
                 parentPhone = "0712345678",
@@ -401,7 +480,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 id = "3",
                 name = "Liam Ochieng",
                 initials = "LO",
-                avatarColor = AmberAccent,
+                avatarColor = DefaultAmberAccent,
                 parentName = "David Ochieng",
                 parentEmail = "david@safiri.co.ke",
                 parentPhone = "0722114455",
@@ -415,7 +494,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 id = "4",
                 name = "Amina Njoroge",
                 initials = "AN",
-                avatarColor = PurpleAccent,
+                avatarColor = DefaultPurpleAccent,
                 parentName = "Fatuma Njoroge",
                 parentEmail = "fatuma@safiri.co.ke",
                 parentPhone = "0733889900",
@@ -429,7 +508,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 id = "5",
                 name = "David Kipchoge",
                 initials = "DK",
-                avatarColor = RedAccent,
+                avatarColor = DefaultRedAccent,
                 parentName = "Eliud Kipchoge",
                 parentEmail = "eliud@safiri.co.ke",
                 parentPhone = "0700112233",
@@ -443,7 +522,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 id = "6",
                 name = "Faith Wanjiru",
                 initials = "FW",
-                avatarColor = GreenAccent,
+                avatarColor = DefaultGreenAccent,
                 parentName = "Grace Wanjiru",
                 parentEmail = "grace@safiri.co.ke",
                 parentPhone = "0711998877",
@@ -475,18 +554,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
         // Preloaded fleet info
         _adminFleetBuses.value = listOf(
-            FleetBusItem("1", "KDE 732X", "Erick Mwangi", 18, 18, 22, "On Time", GreenAccent),
-            FleetBusItem("2", "KDE 119A", "John Kiprop", 12, 12, 22, "Delayed", AmberAccent, speed = 30),
-            FleetBusItem("3", "KDE 540R", "Otieno Onyango", 21, 21, 22, "Active", AccentBlue),
-            FleetBusItem("4", "KDE 902Y", "James Kamau", 8, 8, 22, "On Time", GreenAccent),
-            FleetBusItem("5", "KDE 991Z", "Inactive", 0, 0, 22, "No Driver", TextTertiaryColor)
+            FleetBusItem("1", "KDE 732X", "Erick Mwangi", 18, 18, 22, "On Time", DefaultGreenAccent),
+            FleetBusItem("2", "KDE 119A", "John Kiprop", 12, 12, 22, "Delayed", DefaultAmberAccent, speed = 30),
+            FleetBusItem("3", "KDE 540R", "Otieno Onyango", 21, 21, 22, "Active", DefaultAccentBlue),
+            FleetBusItem("4", "KDE 902Y", "James Kamau", 8, 8, 22, "On Time", DefaultGreenAccent),
+            FleetBusItem("5", "KDE 991Z", "Inactive", 0, 0, 22, "No Driver", DefaultTextTertiaryColor)
         )
 
         _driversList.value = listOf(
-            DriverRosterItem("1", "Erick Mwangi", "EM", AccentBlue, "KDE 732X", 6, 0.95f, 96),
-            DriverRosterItem("2", "John Kiprop", "JK", GreenAccent, "KDE 119A", 4, 0.78f, 82),
-            DriverRosterItem("3", "Otieno Onyango", "OO", AmberAccent, "KDE 540R", 8, 0.92f, 91),
-            DriverRosterItem("4", "James Kamau", "JK", PurpleAccent, "KDE 902Y", 3, 0.88f, 87)
+            DriverRosterItem("1", "Erick Mwangi", "EM", DefaultAccentBlue, "KDE 732X", 6, 0.95f, 96),
+            DriverRosterItem("2", "John Kiprop", "JK", DefaultGreenAccent, "KDE 119A", 4, 0.78f, 82),
+            DriverRosterItem("3", "Otieno Onyango", "OO", DefaultAmberAccent, "KDE 540R", 8, 0.92f, 91),
+            DriverRosterItem("4", "James Kamau", "JK", DefaultPurpleAccent, "KDE 902Y", 3, 0.88f, 87)
         )
 
         _subscriptionStatus.value = SubscriptionStatus.ACTIVE
@@ -495,7 +574,347 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             InvoiceItem("INV-2026-006", "01 Jun 2026", "KES 15,000", "PAID", "Visa ending in 8842", "REC-771239"),
             InvoiceItem("INV-2026-005", "01 May 2026", "KES 15,000", "PAID", "M-Pesa 247247", "REC-661002")
         )
+
+        // Seed Moovit Transit Lines
+        _transitLines.value = listOf(
+            TransitLine(
+                id = "line_732",
+                lineNumber = "732",
+                name = "Kilimani Express Shuttle",
+                color = DefaultAccentBlue,
+                operator = "Safiri Express Direct",
+                frequencyMinutes = 15,
+                serviceHours = "06:00 AM - 18:30 PM",
+                direction1Name = "To Upper Hill / Academy",
+                direction1Stops = listOf("Kawangware Terminal", "Westlands Hub", "Kilimani Station", "Upper Hill / Academy"),
+                direction2Name = "To Kawangware Terminal",
+                direction2Stops = listOf("Upper Hill / Academy", "Kilimani Station", "Westlands Hub", "Kawangware Terminal"),
+                activeBusesCount = 3,
+                timetableDepartures = listOf(
+                    LineDeparture("06:45 AM", "Upper Hill / Academy", isLive = true, "Seats Available", 0),
+                    LineDeparture("07:00 AM", "Upper Hill / Academy", isLive = true, "Few Seats", 2),
+                    LineDeparture("07:15 AM", "Upper Hill / Academy", isLive = false, "Empty", 0),
+                    LineDeparture("07:30 AM", "Upper Hill / Academy", isLive = false, "Empty", 0),
+                    LineDeparture("15:30 PM", "Kawangware Terminal", isLive = false, "Empty", 0),
+                    LineDeparture("16:00 PM", "Kawangware Terminal", isLive = false, "Empty", 0)
+                ),
+                statusType = LineStatusType.ON_TIME,
+                statusDetail = "Normal service on all stops with live GPS tracking",
+                isFavorite = true,
+                wheelchairAccessible = true
+            ),
+            TransitLine(
+                id = "line_119",
+                lineNumber = "119",
+                name = "Kawangware - Valley Shuttle",
+                color = DefaultPurpleAccent,
+                operator = "Safiri Community Lines",
+                frequencyMinutes = 20,
+                serviceHours = "06:15 AM - 19:00 PM",
+                direction1Name = "To Upper Hill Campus",
+                direction1Stops = listOf("Naivasha Terminal", "Kawangware Junction", "Valley Arcade", "Upper Hill Campus"),
+                direction2Name = "To Naivasha Terminal",
+                direction2Stops = listOf("Upper Hill Campus", "Valley Arcade", "Kawangware Junction", "Naivasha Terminal"),
+                activeBusesCount = 2,
+                timetableDepartures = listOf(
+                    LineDeparture("06:30 AM", "Upper Hill Campus", isLive = true, "Seats Available", 4),
+                    LineDeparture("06:50 AM", "Upper Hill Campus", isLive = true, "Standing Only", 5),
+                    LineDeparture("07:10 AM", "Upper Hill Campus", isLive = false, "Empty", 0)
+                ),
+                statusType = LineStatusType.MODERATE_DELAY,
+                statusDetail = "+5 min delay due to Naivasha Rd roadworks",
+                isFavorite = false,
+                wheelchairAccessible = true
+            ),
+            TransitLine(
+                id = "line_44",
+                lineNumber = "44",
+                name = "Westlands - Lavington Direct",
+                color = DefaultGreenAccent,
+                operator = "Safiri Direct",
+                frequencyMinutes = 12,
+                serviceHours = "06:00 AM - 19:30 PM",
+                direction1Name = "To Lavington School Zone",
+                direction1Stops = listOf("Sarit Centre Hub", "Westlands Ring Rd", "Rhapta Road", "Lavington School Zone"),
+                direction2Name = "To Sarit Centre Hub",
+                direction2Stops = listOf("Lavington School Zone", "Rhapta Road", "Westlands Ring Rd", "Sarit Centre Hub"),
+                activeBusesCount = 4,
+                timetableDepartures = listOf(
+                    LineDeparture("06:40 AM", "Lavington School Zone", isLive = true, "Seats Available", 0),
+                    LineDeparture("06:52 AM", "Lavington School Zone", isLive = true, "Seats Available", 0),
+                    LineDeparture("07:04 AM", "Lavington School Zone", isLive = false, "Empty", 0)
+                ),
+                statusType = LineStatusType.ON_TIME,
+                statusDetail = "On schedule with smooth traffic flow",
+                isFavorite = true,
+                wheelchairAccessible = true
+            ),
+            TransitLine(
+                id = "line_102",
+                lineNumber = "102",
+                name = "Karen Academy Express",
+                color = DefaultAmberAccent,
+                operator = "Safiri South County",
+                frequencyMinutes = 25,
+                serviceHours = "06:30 AM - 18:00 PM",
+                direction1Name = "To St. Austin's Academy",
+                direction1Stops = listOf("Karen Shopping Centre", "Bomas Junction", "Upper Hill Link", "St. Austin's Academy"),
+                direction2Name = "To Karen Shopping Centre",
+                direction2Stops = listOf("St. Austin's Academy", "Upper Hill Link", "Bomas Junction", "Karen Shopping Centre"),
+                activeBusesCount = 2,
+                timetableDepartures = listOf(
+                    LineDeparture("06:40 AM", "St. Austin's Academy", isLive = true, "Seats Available", 0),
+                    LineDeparture("07:05 AM", "St. Austin's Academy", isLive = false, "Empty", 0)
+                ),
+                statusType = LineStatusType.ON_TIME,
+                statusDetail = "Normal operation across Langata / Karen corridor",
+                isFavorite = false,
+                wheelchairAccessible = true
+            ),
+            TransitLine(
+                id = "line_14",
+                lineNumber = "14",
+                name = "Lavington Loop Connector",
+                color = Color(0xFF06B6D4),
+                operator = "Safiri Feeder Network",
+                frequencyMinutes = 15,
+                serviceHours = "06:00 AM - 18:00 PM",
+                direction1Name = "To Valley Arcade Hub",
+                direction1Stops = listOf("James Gichuru Gate", "Lavington Green", "Muthangari Rd", "Valley Arcade Hub"),
+                direction2Name = "To James Gichuru Gate",
+                direction2Stops = listOf("Valley Arcade Hub", "Muthangari Rd", "Lavington Green", "James Gichuru Gate"),
+                activeBusesCount = 2,
+                timetableDepartures = listOf(
+                    LineDeparture("06:55 AM", "Valley Arcade Hub", isLive = true, "Seats Available", 0),
+                    LineDeparture("07:10 AM", "Valley Arcade Hub", isLive = false, "Empty", 0)
+                ),
+                statusType = LineStatusType.ON_TIME,
+                statusDetail = "Normal flow on James Gichuru road",
+                isFavorite = false,
+                wheelchairAccessible = true
+            )
+        )
+
+        // Seed Moovit Nearby Stations
+        _nearbyStations.value = listOf(
+            NearbyStation(
+                id = "st_1",
+                name = "Kilimani Junction Stop",
+                distanceMeters = 85,
+                walkingTimeMinutes = 1,
+                platformBay = "Bay 1 (Valley Arcade)",
+                nextDepartures = listOf(
+                    StationNextDeparture("732", "Kilimani Express", "Upper Hill / Academy", 2, "KDE 732X", DefaultAccentBlue),
+                    StationNextDeparture("119", "Kawangware Shuttle", "Upper Hill Campus", 6, "KDE 119A", DefaultPurpleAccent)
+                ),
+                wheelchairAccessible = true,
+                isSaved = true
+            ),
+            NearbyStation(
+                id = "st_2",
+                name = "Valley Arcade Transit Bay",
+                distanceMeters = 240,
+                walkingTimeMinutes = 3,
+                platformBay = "Bay 3 (Main Road)",
+                nextDepartures = listOf(
+                    StationNextDeparture("14", "Lavington Loop", "Valley Arcade Hub", 4, "KDE 442P", Color(0xFF06B6D4)),
+                    StationNextDeparture("732", "Kilimani Express", "Upper Hill / Academy", 11, "KDE 732X", DefaultAccentBlue)
+                ),
+                wheelchairAccessible = true,
+                isSaved = false
+            ),
+            NearbyStation(
+                id = "st_3",
+                name = "Westlands Link Hub",
+                distanceMeters = 480,
+                walkingTimeMinutes = 6,
+                platformBay = "Platform 2B",
+                nextDepartures = listOf(
+                    StationNextDeparture("44", "Westlands Direct", "Lavington School Zone", 3, "KDE 883L", DefaultGreenAccent),
+                    StationNextDeparture("732", "Kilimani Express", "Upper Hill / Academy", 14, "KDE 732X", DefaultAccentBlue)
+                ),
+                wheelchairAccessible = true,
+                isSaved = true
+            ),
+            NearbyStation(
+                id = "st_4",
+                name = "Upper Hill School Gate Station",
+                distanceMeters = 650,
+                walkingTimeMinutes = 8,
+                platformBay = "Platform A",
+                nextDepartures = listOf(
+                    StationNextDeparture("102", "Karen Academy", "St. Austin's Academy", 5, "KDE 552K", DefaultAmberAccent),
+                    StationNextDeparture("119", "Kawangware Shuttle", "Upper Hill Campus", 12, "KDE 119A", DefaultPurpleAccent)
+                ),
+                wheelchairAccessible = true,
+                isSaved = false
+            )
+        )
+
+        // Seed Moovit Multi-Modal Itinerary Plans
+        _multiModalPlans.value = listOf(
+            MultiModalPlan(
+                id = "plan_best",
+                title = "Fastest Shuttle Connection",
+                routeTypeTag = "BEST_ROUTE",
+                totalDurationMinutes = 24,
+                walkMinutes = 3,
+                transitMinutes = 21,
+                departureTime = "06:45 AM",
+                arrivalTime = "07:09 AM",
+                transfersCount = 0,
+                primaryLineNumber = "732",
+                primaryLineColor = DefaultAccentBlue,
+                primaryBusPlate = "KDE 732X",
+                crowdLevel = "Seats Available",
+                co2SavingsKg = 2.8f,
+                caloriesBurned = 130,
+                steps = listOf(
+                    ItineraryStep(ItineraryStepType.WALK_TO_STOP, "Walk 120m to Kilimani Junction Stop", "Head east on Argwings Kodhek Rd (2 min)", 2, 120),
+                    ItineraryStep(ItineraryStepType.BOARD_BUS, "Board Shuttle 732 (KDE 732X)", "Platform Bay 1 • Driver: Erick Mwangi", 1, 0, "732", "KDE 732X"),
+                    ItineraryStep(ItineraryStepType.RIDE_BUS, "Ride 3 stops on Kilimani Express", "Passing Westlands Hub & Valley Arcade", 18, 4200, "732", "KDE 732X", listOf("Kilimani Junction", "Valley Arcade", "Upper Hill Link", "St. Austin's Academy Gate")),
+                    ItineraryStep(ItineraryStepType.ALIGHT, "Alight at St. Austin's Academy Gate", "Get off at front exit door", 1, 0, isAlertTrigger = true),
+                    ItineraryStep(ItineraryStepType.WALK_TO_DESTINATION, "Walk 50m into School Reception", "Safe designated pedestrian lane", 2, 50)
+                )
+            ),
+            MultiModalPlan(
+                id = "plan_alternative",
+                title = "Kawangware Regular Route",
+                routeTypeTag = "FEWEST_TRANSFERS",
+                totalDurationMinutes = 32,
+                walkMinutes = 5,
+                transitMinutes = 27,
+                departureTime = "06:35 AM",
+                arrivalTime = "07:07 AM",
+                transfersCount = 0,
+                primaryLineNumber = "119",
+                primaryLineColor = DefaultPurpleAccent,
+                primaryBusPlate = "KDE 119A",
+                crowdLevel = "Seats Available",
+                co2SavingsKg = 2.2f,
+                caloriesBurned = 175,
+                steps = listOf(
+                    ItineraryStep(ItineraryStepType.WALK_TO_STOP, "Walk 240m to Valley Arcade Bay 3", "Head north towards Naivasha Rd", 4, 240),
+                    ItineraryStep(ItineraryStepType.BOARD_BUS, "Board Shuttle 119 (KDE 119A)", "Platform Bay 3 • Driver: John Kiprop", 1, 0, "119", "KDE 119A"),
+                    ItineraryStep(ItineraryStepType.RIDE_BUS, "Ride 4 stops on Kawangware Route", "Passing Junction & Upper Hill", 24, 5100, "119", "KDE 119A", listOf("Valley Arcade", "Kawangware Junction", "Upper Hill", "St. Austin's Academy")),
+                    ItineraryStep(ItineraryStepType.ALIGHT, "Alight at Upper Hill Station", "Alight at Platform A", 1, 0, isAlertTrigger = true),
+                    ItineraryStep(ItineraryStepType.WALK_TO_DESTINATION, "Walk 150m to School Reception", "Pedestrian crosswalk", 2, 150)
+                )
+            ),
+            MultiModalPlan(
+                id = "plan_least_walk",
+                title = "Direct Estate Pick-up Express",
+                routeTypeTag = "LEAST_WALKING",
+                totalDurationMinutes = 28,
+                walkMinutes = 1,
+                transitMinutes = 27,
+                departureTime = "06:50 AM",
+                arrivalTime = "07:18 AM",
+                transfersCount = 0,
+                primaryLineNumber = "732",
+                primaryLineColor = DefaultGreenAccent,
+                primaryBusPlate = "KDE 732X",
+                crowdLevel = "Empty Seats",
+                co2SavingsKg = 3.1f,
+                caloriesBurned = 85,
+                steps = listOf(
+                    ItineraryStep(ItineraryStepType.WALK_TO_STOP, "Walk 40m to Estate Gate Pick-up", "Immediate front porch pickup", 1, 40),
+                    ItineraryStep(ItineraryStepType.BOARD_BUS, "Board Express Bus 732 (KDE 732X)", "Direct Boarding with Driver Erick", 1, 0, "732", "KDE 732X"),
+                    ItineraryStep(ItineraryStepType.RIDE_BUS, "Ride Express Direct to School", "Express non-stop route", 25, 4800, "732", "KDE 732X"),
+                    ItineraryStep(ItineraryStepType.ALIGHT, "Alight directly inside School Gate", "Security guarded drop-off bay", 1, 0, isAlertTrigger = true)
+                )
+            )
+        )
     }
+
+    // --- MOOVIT TRANSIT INTERACTIVE METHODS ---
+
+    fun selectTransitLine(line: TransitLine?) {
+        _selectedTransitLine.value = line
+    }
+
+    fun toggleFavoriteLine(lineId: String) {
+        val current = _savedFavoriteLines.value.toMutableSet()
+        if (current.contains(lineId)) {
+            current.remove(lineId)
+        } else {
+            current.add(lineId)
+        }
+        _savedFavoriteLines.value = current
+    }
+
+    fun toggleSavedStation(stationId: String) {
+        val current = _savedStationIds.value.toMutableSet()
+        if (current.contains(stationId)) {
+            current.remove(stationId)
+        } else {
+            current.add(stationId)
+        }
+        _savedStationIds.value = current
+    }
+
+    fun startLiveGuidance(plan: MultiModalPlan) {
+        _activeLiveGuidance.value = plan
+        _currentLiveStepIndex.value = 0
+        _liveGuidanceAlightAlertFired.value = false
+    }
+
+    fun stopLiveGuidance() {
+        _activeLiveGuidance.value = null
+        _currentLiveStepIndex.value = 0
+        _liveGuidanceAlightAlertFired.value = false
+    }
+
+    fun advanceLiveStep() {
+        val currentPlan = _activeLiveGuidance.value ?: return
+        val nextIndex = _currentLiveStepIndex.value + 1
+        if (nextIndex < currentPlan.steps.size) {
+            _currentLiveStepIndex.value = nextIndex
+            val step = currentPlan.steps[nextIndex]
+            if (step.isAlertTrigger || step.type == ItineraryStepType.ALIGHT) {
+                _liveGuidanceAlightAlertFired.value = true
+            }
+        } else {
+            // Completed guidance
+            stopLiveGuidance()
+        }
+    }
+
+    fun setCustomPickupStation(stationName: String) {
+        val child = currentChild.value
+        if (child != null) {
+            _students.value = _students.value.map { st ->
+                if (st.id == child.id) {
+                    st.copy(pickupStop = stationName)
+                } else st
+            }
+            _shareToastMessage.value = "Updated pickup stop to $stationName for ${child.name}!"
+        }
+    }
+
+    fun reportLineDelay(lineId: String, delayMins: Int, reason: String) {
+        _transitLines.value = _transitLines.value.map { line ->
+            if (line.id == lineId) {
+                line.copy(
+                    statusType = if (delayMins > 10) LineStatusType.HEAVY_DELAY else LineStatusType.MODERATE_DELAY,
+                    statusDetail = "+$delayMins min delay: $reason"
+                )
+            } else {
+                line
+            }
+        }
+        _communityIncidents.value = listOf(
+            IncidentReport(
+                id = "inc_${System.currentTimeMillis()}",
+                title = "Reported +$delayMins min on Line ${lineId.replace("line_", "")}",
+                location = reason,
+                reportedTime = "Just now",
+                votes = 1,
+                category = "Traffic"
+            )
+        ) + _communityIncidents.value
+    }
+
 
     // --- SUBSCRIPTION MANAGEMENT METHODS ---
     fun setSubscriptionStatus(status: SubscriptionStatus) {
@@ -959,7 +1378,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 id = newStudentId,
                 name = childFullName.trim(),
                 initials = if (initials.isNotBlank()) initials else "ST",
-                avatarColor = AccentBlue,
+                avatarColor = DefaultAccentBlue,
                 parentName = parentFullName.trim(),
                 parentEmail = trimmedEmail,
                 parentPhone = parentPhone.trim(),
@@ -1094,7 +1513,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             id = newId,
             name = name,
             initials = initials,
-            avatarColor = existing?.avatarColor ?: AccentBlue,
+            avatarColor = existing?.avatarColor ?: DefaultAccentBlue,
             parentName = parentName,
             parentEmail = "parent_${name.lowercase().replace(" ", "")}@safiri.co.ke",
             parentPhone = parentPhone,
@@ -1165,7 +1584,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             id = "dr_${System.currentTimeMillis()}",
             name = name,
             initials = initials,
-            avatarColor = AccentBlue,
+            avatarColor = DefaultAccentBlue,
             busPlate = busPlate,
             yearsExperience = yearsExp,
             performanceProgress = 0.90f,
@@ -1183,7 +1602,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 occupancyCount = 0,
                 capacity = 22,
                 status = "Active",
-                statusColor = GreenAccent
+                statusColor = DefaultGreenAccent
             )
             _adminFleetBuses.value = _adminFleetBuses.value + newBus
         } else {

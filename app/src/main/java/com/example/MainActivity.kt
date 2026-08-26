@@ -33,19 +33,34 @@ import com.example.ui.theme.GreenAccent
 import com.example.ui.theme.MyApplicationTheme
 import com.example.viewmodel.AppViewModel
 
+import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.theme.AppThemeMode
+import com.example.ui.theme.LocalSafiriColors
+
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
     setContent {
-      MyApplicationTheme {
-        val viewModel: AppViewModel = viewModel()
+      val viewModel: AppViewModel = viewModel()
+      val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+      val isSystemDark = isSystemInDarkTheme()
+      val darkTheme = when (themeMode) {
+        AppThemeMode.DARK -> true
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.SYSTEM -> isSystemDark
+      }
+
+      MyApplicationTheme(darkTheme = darkTheme) {
         val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
         val currentRole by viewModel.currentRole.collectAsStateWithLifecycle()
         val subscriptionStatus by viewModel.subscriptionStatus.collectAsStateWithLifecycle()
         val showAiDialog by viewModel.showAiAssistantDialog.collectAsStateWithLifecycle()
 
-        Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+        Scaffold(
+          modifier = Modifier.fillMaxSize(),
+          containerColor = BackgroundColor
+        ) { innerPadding ->
           val modifier = Modifier.padding(innerPadding)
           Box(modifier = Modifier.fillMaxSize()) {
             if (currentUser == null || currentRole == null) {
@@ -65,7 +80,7 @@ class MainActivity : ComponentActivity() {
               FloatingActionButton(
                 onClick = { viewModel.openAiAssistantDialog() },
                 containerColor = GreenAccent,
-                contentColor = BackgroundColor,
+                contentColor = androidx.compose.ui.graphics.Color.White,
                 modifier = Modifier
                   .align(Alignment.BottomEnd)
                   .padding(16.dp)

@@ -273,13 +273,21 @@ fun VectorTransitMap(
             -1.2720f to 36.7820f, // School (St. Mary's)
             -1.2985f to 36.8125f  // Upper Hill Stop
         )
+
+        val accentBlue = AccentBlue
+        val greenAccent = GreenAccent
+        val redAccent = RedAccent
+        val amberAccent = AmberAccent
+        val purpleAccent = PurpleAccent
+        val surface3 = Surface3Color
+        val bgCol = BackgroundColor
         
         val stopsData = listOf(
-            Triple("Kawangware", -1.2825f to 36.7450f, GreenAccent),
-            Triple("Westlands", -1.2635f to 36.8040f, AccentBlue),
-            Triple("Kilimani", -1.2915f to 36.7845f, RedAccent),
-            Triple("Upper Hill", -1.2985f to 36.8125f, AmberAccent),
-            Triple("School Academy", -1.2720f to 36.7820f, PurpleAccent)
+            Triple("Kawangware", -1.2825f to 36.7450f, greenAccent),
+            Triple("Westlands", -1.2635f to 36.8040f, accentBlue),
+            Triple("Kilimani", -1.2915f to 36.7845f, redAccent),
+            Triple("Upper Hill", -1.2985f to 36.8125f, amberAccent),
+            Triple("School Academy", -1.2720f to 36.7820f, purpleAccent)
         )
         
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -321,7 +329,7 @@ fun VectorTransitMap(
             // Neon Glow Layer
             for (i in 0 until pathPoints.size - 1) {
                 drawLine(
-                    color = AccentBlue.copy(alpha = 0.12f),
+                    color = accentBlue.copy(alpha = 0.12f),
                     start = pathPoints[i],
                     end = pathPoints[i + 1],
                     strokeWidth = 12.dp.toPx(),
@@ -332,7 +340,7 @@ fun VectorTransitMap(
             // Standard Path Track
             for (i in 0 until pathPoints.size - 1) {
                 drawLine(
-                    color = Surface3Color,
+                    color = surface3,
                     start = pathPoints[i],
                     end = pathPoints[i + 1],
                     strokeWidth = 4.dp.toPx(),
@@ -345,7 +353,7 @@ fun VectorTransitMap(
             for (i in 0 until pathPoints.size - 1) {
                 if (i < activeSegmentLimit.toInt()) {
                     drawLine(
-                        color = AccentBlue,
+                        color = accentBlue,
                         start = pathPoints[i],
                         end = pathPoints[i + 1],
                         strokeWidth = 3.dp.toPx(),
@@ -358,7 +366,7 @@ fun VectorTransitMap(
                         pathPoints[i].y + (pathPoints[i+1].y - pathPoints[i].y) * segmentProgress
                     )
                     drawLine(
-                        color = AccentBlue,
+                        color = accentBlue,
                         start = pathPoints[i],
                         end = interpolatedEnd,
                         strokeWidth = 3.dp.toPx(),
@@ -380,7 +388,7 @@ fun VectorTransitMap(
                 
                 // Backing
                 drawCircle(
-                    color = BackgroundColor,
+                    color = bgCol,
                     radius = 6.dp.toPx(),
                     center = pos
                 )
@@ -401,7 +409,7 @@ fun VectorTransitMap(
                 
                 // Pulse
                 drawCircle(
-                    color = AccentBlue.copy(alpha = pulseAlpha * 0.45f),
+                    color = accentBlue.copy(alpha = pulseAlpha * 0.45f),
                     radius = 20.dp.toPx() * pulseScale,
                     center = busPos
                 )
@@ -415,16 +423,16 @@ fun VectorTransitMap(
                 
                 // Blue core
                 drawCircle(
-                    color = AccentBlue,
+                    color = accentBlue,
                     radius = 7.dp.toPx(),
                     center = busPos
                 )
             } else {
-                val adminColors = listOf(AccentBlue, AmberAccent, GreenAccent, PurpleAccent)
+                val adminColors = listOf(accentBlue, amberAccent, greenAccent, purpleAccent)
                 val activeBusesCount = multipleBusOffsets.size.coerceAtMost(4)
                 for (i in 0 until activeBusesCount) {
                     val busPct = multipleBusOffsets[i].first
-                    val busColor = adminColors.getOrElse(i) { AccentBlue }
+                    val busColor = adminColors.getOrElse(i) { accentBlue }
                     val busLatLng = getInterpolatedLatLngInKotlin(busPct)
                     val busPos = mapToOffset(busLatLng.first, busLatLng.second)
                     
@@ -531,7 +539,8 @@ fun MapHero(
     stops: List<RouteStop> = emptyList(),
     modifier: Modifier = Modifier,
     isMultipleBuses: Boolean = false,
-    multipleBusOffsets: List<Pair<Float, Float>> = emptyList() // Custom drift for other buses
+    multipleBusOffsets: List<Pair<Float, Float>> = emptyList(), // Custom drift for other buses
+    customApiKey: String = ""
 ) {
     var isVectorMode by remember { mutableStateOf(true) } // Fast vector transit map by default!
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
@@ -539,11 +548,15 @@ fun MapHero(
     var hasError by remember { mutableStateOf(false) }
     var reloadTrigger by remember { mutableStateOf(0) }
 
-    val apiKey = remember {
-        try {
-            com.example.BuildConfig.GOOGLE_MAPS_API_KEY
-        } catch (e: Exception) {
-            ""
+    val apiKey = remember(customApiKey) {
+        if (customApiKey.isNotBlank()) {
+            customApiKey
+        } else {
+            try {
+                com.example.BuildConfig.GOOGLE_MAPS_API_KEY
+            } catch (e: Exception) {
+                ""
+            }
         }
     }
 
@@ -1247,17 +1260,18 @@ private fun getMapHtml(apiKey: String): String {
     """.trimIndent()
 }
 
-// 10. Reusable ScrollView with custom contentContainerStyle for React Native-like scrolling with bottom padding
+// 10. Reusable ScrollView with custom contentContainerStyle for smooth vertical scrolling
 @Composable
 fun ScrollView(
     modifier: Modifier = Modifier,
     contentContainerStyle: Modifier = Modifier.padding(bottom = 120.dp, start = 16.dp, end = 16.dp, top = 16.dp),
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val scrollState = rememberScrollState()
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
     ) {
         Column(
             modifier = contentContainerStyle.fillMaxWidth(),

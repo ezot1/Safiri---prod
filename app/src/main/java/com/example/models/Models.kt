@@ -193,3 +193,107 @@ data class FleetBusItem(
     val speed: Int = 42,
     val signal: String = "Excellent"
 )
+
+// ==========================================
+// MOOVIT-INSPIRED TRANSIT DATA MODELS
+// ==========================================
+
+enum class LineStatusType {
+    ON_TIME,
+    MODERATE_DELAY,
+    HEAVY_DELAY,
+    DETOUR,
+    PLANNED_WORK
+}
+
+data class LineDeparture(
+    val time: String,
+    val destination: String,
+    val isLive: Boolean = true,
+    val occupancy: String = "Seats Available",
+    val delayMins: Int = 0
+)
+
+data class TransitLine(
+    val id: String,
+    val lineNumber: String,
+    val name: String,
+    val color: Color,
+    val operator: String = "Safiri School Transit",
+    val frequencyMinutes: Int = 15,
+    val serviceHours: String = "06:00 AM - 18:30 PM",
+    val direction1Name: String,
+    val direction1Stops: List<String>,
+    val direction2Name: String,
+    val direction2Stops: List<String>,
+    val activeBusesCount: Int = 3,
+    val timetableDepartures: List<LineDeparture>,
+    val statusType: LineStatusType = LineStatusType.ON_TIME,
+    val statusDetail: String = "Normal service on all stops",
+    val isFavorite: Boolean = false,
+    val wheelchairAccessible: Boolean = true
+)
+
+data class StationNextDeparture(
+    val lineNumber: String,
+    val lineName: String,
+    val destination: String,
+    val etaMinutes: Int,
+    val busPlate: String,
+    val lineColor: Color,
+    val isLive: Boolean = true
+)
+
+data class NearbyStation(
+    val id: String,
+    val name: String,
+    val distanceMeters: Int,
+    val walkingTimeMinutes: Int,
+    val platformBay: String,
+    val nextDepartures: List<StationNextDeparture>,
+    val wheelchairAccessible: Boolean = true,
+    val isSaved: Boolean = false,
+    val latitude: Double = -1.2921,
+    val longitude: Double = 36.8219
+)
+
+enum class ItineraryStepType {
+    WALK_TO_STOP,
+    BOARD_BUS,
+    RIDE_BUS,
+    ALIGHT,
+    WALK_TO_DESTINATION,
+    TRANSFER
+}
+
+data class ItineraryStep(
+    val type: ItineraryStepType,
+    val instruction: String,
+    val subDetail: String,
+    val durationMinutes: Int,
+    val distanceMeters: Int = 0,
+    val lineNumber: String? = null,
+    val busPlate: String? = null,
+    val stopsPassed: List<String> = emptyList(),
+    val isAlertTrigger: Boolean = false
+)
+
+data class MultiModalPlan(
+    val id: String,
+    val title: String,
+    val routeTypeTag: String, // "BEST_ROUTE", "FEWEST_TRANSFERS", "LEAST_WALKING", "EXPRESS"
+    val totalDurationMinutes: Int,
+    val walkMinutes: Int,
+    val transitMinutes: Int,
+    val departureTime: String,
+    val arrivalTime: String,
+    val transfersCount: Int,
+    val primaryLineNumber: String,
+    val primaryLineColor: Color,
+    val primaryBusPlate: String,
+    val crowdLevel: String = "Seats Available",
+    val co2SavingsKg: Float = 2.4f,
+    val caloriesBurned: Int = 140,
+    val steps: List<ItineraryStep>
+)
+

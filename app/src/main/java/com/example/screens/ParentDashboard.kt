@@ -3,6 +3,8 @@ package com.example.screens
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,8 +21,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -42,11 +46,103 @@ fun ParentDashboard(
     viewModel: AppViewModel,
     modifier: Modifier = Modifier
 ) {
-    var activeTab by remember { mutableStateOf(0) } // 0: Home, 1: Saved, 2: Plan, 3: Alerts, 4: Me
+    var activeTab by remember { mutableStateOf(0) } // 0: Directions, 1: Lines & Stops, 2: Plan, 3: Alerts, 4: Me
+    val themeMode by viewModel.themeMode.collectAsState()
+    val activeAlerts by viewModel.activeAlerts.collectAsState()
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = BackgroundColor,
+        topBar = {
+            // Moovit-style Brand Top Header
+            Surface(
+                color = SurfaceColor,
+                shadowElevation = 2.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MoovitOrange),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.DirectionsBus,
+                                contentDescription = "Safiri Transit",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "SAFIRI",
+                                    color = TextPrimaryColor,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = 0.5.sp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(AccentBlue.copy(alpha = 0.15f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "TRANSIT",
+                                        color = AccentBlue,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(GreenAccent)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Nairobi Metro • Live GPS",
+                                    color = TextSecondaryColor,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+
+                    // Theme Toggle Button (Light / Dark Mode)
+                    IconButton(
+                        onClick = { viewModel.toggleThemeMode() },
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(Surface3Color)
+                            .testTag("theme_mode_toggle_button")
+                    ) {
+                        Icon(
+                            imageVector = if (themeMode == AppThemeMode.LIGHT) Icons.Filled.DarkMode else Icons.Filled.LightMode,
+                            contentDescription = "Toggle Dark/Light Mode",
+                            tint = if (themeMode == AppThemeMode.LIGHT) TextPrimaryColor else AmberAccent,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+        },
         bottomBar = {
             NavigationBar(
                 containerColor = SurfaceColor,
@@ -56,11 +152,14 @@ fun ParentDashboard(
                 NavigationBarItem(
                     selected = activeTab == 0,
                     onClick = { activeTab = 0 },
-                    icon = { Icon(Icons.Filled.Home, contentDescription = "Home") },
+                    icon = { Icon(Icons.Filled.DirectionsBus, contentDescription = "Directions") },
+                    label = { Text("Directions", fontSize = 11.sp, fontWeight = if (activeTab == 0) FontWeight.Bold else FontWeight.Normal) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = AccentBlue,
                         unselectedIconColor = TextTertiaryColor,
-                        indicatorColor = Surface3Color
+                        selectedTextColor = AccentBlue,
+                        unselectedTextColor = TextTertiaryColor,
+                        indicatorColor = AccentBlue.copy(alpha = 0.15f)
                     ),
                     modifier = Modifier.testTag("parent_tab_home")
                 )
@@ -68,10 +167,13 @@ fun ParentDashboard(
                     selected = activeTab == 1,
                     onClick = { activeTab = 1 },
                     icon = { Icon(Icons.Filled.Star, contentDescription = "Saved") },
+                    label = { Text("Saved", fontSize = 11.sp, fontWeight = if (activeTab == 1) FontWeight.Bold else FontWeight.Normal) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = AccentBlue,
                         unselectedIconColor = TextTertiaryColor,
-                        indicatorColor = Surface3Color
+                        selectedTextColor = AccentBlue,
+                        unselectedTextColor = TextTertiaryColor,
+                        indicatorColor = AccentBlue.copy(alpha = 0.15f)
                     ),
                     modifier = Modifier.testTag("parent_tab_saved")
                 )
@@ -79,21 +181,42 @@ fun ParentDashboard(
                     selected = activeTab == 2,
                     onClick = { activeTab = 2 },
                     icon = { Icon(Icons.Filled.AltRoute, contentDescription = "Plan") },
+                    label = { Text("Plan", fontSize = 11.sp, fontWeight = if (activeTab == 2) FontWeight.Bold else FontWeight.Normal) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = AccentBlue,
                         unselectedIconColor = TextTertiaryColor,
-                        indicatorColor = Surface3Color
+                        selectedTextColor = AccentBlue,
+                        unselectedTextColor = TextTertiaryColor,
+                        indicatorColor = AccentBlue.copy(alpha = 0.15f)
                     ),
                     modifier = Modifier.testTag("parent_tab_planner")
                 )
                 NavigationBarItem(
                     selected = activeTab == 3,
                     onClick = { activeTab = 3 },
-                    icon = { Icon(Icons.Filled.Notifications, contentDescription = "Alerts") },
+                    icon = {
+                        BadgedBox(
+                            badge = {
+                                if (activeAlerts.isNotEmpty()) {
+                                    Badge(
+                                        containerColor = RedAccent,
+                                        contentColor = Color.White
+                                    ) {
+                                        Text("${activeAlerts.size}")
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Filled.Notifications, contentDescription = "Alerts")
+                        }
+                    },
+                    label = { Text("Alerts", fontSize = 11.sp, fontWeight = if (activeTab == 3) FontWeight.Bold else FontWeight.Normal) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = AccentBlue,
                         unselectedIconColor = TextTertiaryColor,
-                        indicatorColor = Surface3Color
+                        selectedTextColor = AccentBlue,
+                        unselectedTextColor = TextTertiaryColor,
+                        indicatorColor = AccentBlue.copy(alpha = 0.15f)
                     ),
                     modifier = Modifier.testTag("parent_tab_alerts")
                 )
@@ -101,10 +224,13 @@ fun ParentDashboard(
                     selected = activeTab == 4,
                     onClick = { activeTab = 4 },
                     icon = { Icon(Icons.Filled.Person, contentDescription = "Me") },
+                    label = { Text("Me", fontSize = 11.sp, fontWeight = if (activeTab == 4) FontWeight.Bold else FontWeight.Normal) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = AccentBlue,
                         unselectedIconColor = TextTertiaryColor,
-                        indicatorColor = Surface3Color
+                        selectedTextColor = AccentBlue,
+                        unselectedTextColor = TextTertiaryColor,
+                        indicatorColor = AccentBlue.copy(alpha = 0.15f)
                     ),
                     modifier = Modifier.testTag("parent_tab_profile")
                 )
@@ -141,27 +267,33 @@ fun ParentHomeTab(viewModel: AppViewModel) {
 
     val assignedBusPlate = currentChild?.assignedBusPlate ?: "KDE 732X"
 
+    val mapsApiKey by viewModel.mapsApiKey.collectAsState()
+
+    // Smooth scrolling layout for Parent Home Tab
+    val parentScrollState = rememberScrollState()
     Column(
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(parentScrollState)
     ) {
-        // Sticky Map Hero at the top showing the specific assigned bus
+        // Map Hero at the top showing the specific assigned bus
         MapHero(
             progressPct = progress,
             busPlate = assignedBusPlate,
             statusText = "On Route",
             etaMinutes = etaMinutes,
             stops = stops,
+            customApiKey = mapsApiKey,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(220.dp)
         )
 
-        // Independent scroll view
-        ScrollView(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
-            contentContainerStyle = Modifier.padding(16.dp)
+                .padding(bottom = 120.dp, start = 16.dp, end = 16.dp, top = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(
                 modifier = Modifier
@@ -288,14 +420,14 @@ fun ParentHomeTab(viewModel: AppViewModel) {
 
             Spacer(modifier = Modifier.height(14.dp))
 
+            // Moovit Live Guidance Active Banner (if user started trip navigation)
+            MoovitLiveGuidanceBanner(viewModel)
+            Spacer(modifier = Modifier.height(12.dp))
+
             // Integrated Real-Time Transit Features
             LiveNavigationGuideCard(viewModel)
             Spacer(modifier = Modifier.height(12.dp))
-            LiveCrowdDensityCard(viewModel)
-            Spacer(modifier = Modifier.height(12.dp))
             PlatformAndTransferCard(viewModel)
-            Spacer(modifier = Modifier.height(12.dp))
-            CommunityIncidentFeedCard(viewModel)
             Spacer(modifier = Modifier.height(12.dp))
             LiveJourneyShareCard(viewModel)
 
@@ -316,24 +448,6 @@ fun ParentHomeTab(viewModel: AppViewModel) {
                 ScheduleRow(time = "07:30 AM", label = "Arrive at school • Academy", status = "Arrived", color = GreenAccent, active = false)
                 ScheduleRow(time = "03:45 PM", label = "Afternoon pickup • Academy", status = "En Route", color = AccentBlue, active = true)
                 ScheduleRow(time = "04:30 PM", label = "Return home • Kilimani", status = "Scheduled", color = TextTertiaryColor, active = false)
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Recent trips card
-            SafiriCard(testTag = "recent_trips_card") {
-                Text(
-                    text = "RECENT TRIPS HISTORY",
-                    color = TextTertiaryColor,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.5.sp
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                TripHistoryRow(date = "Jul 10, 2026", duration = "03:48 PM - 04:22 PM", delay = "On time", color = GreenAccent)
-                TripHistoryRow(date = "Jul 09, 2026", duration = "03:46 PM - 04:29 PM", delay = "+8 min", color = AmberAccent)
-                TripHistoryRow(date = "Jul 08, 2026", duration = "03:45 PM - 04:21 PM", delay = "On time", color = GreenAccent)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -473,6 +587,11 @@ fun ParentSavedTab(viewModel: AppViewModel) {
                 HorizontalDivider(color = BorderColor)
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Moovit Transit Lines & Timetables Explorer
+        MoovitLinesExplorerCard(viewModel)
     }
 }
 
@@ -504,6 +623,11 @@ fun ParentPlanTab(viewModel: AppViewModel) {
             fontSize = 13.sp,
             modifier = Modifier.padding(bottom = 16.dp)
         )
+
+        // Moovit Multi-Modal Trip Planner with Live Turn-by-Turn Guidance
+        MoovitMultiModalPlannerCard(viewModel)
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Search inputs
         SafiriCard(testTag = "planner_form") {
@@ -954,7 +1078,323 @@ fun ParentMeTab(viewModel: AppViewModel) {
             ToggleRow(label = "Trip completed", subLabel = "SMS report when bus reaches safe destination", checked = t4, onCheckedChange = { viewModel.toggleTripCompleted.value = it })
         }
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // Appearance & Theme Mode Card (Dark, Light, System)
+        val currentThemeMode by viewModel.themeMode.collectAsState()
+        SafiriCard(testTag = "appearance_theme_card") {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Filled.Palette, contentDescription = "Appearance", tint = MoovitOrange)
+                Text(
+                    text = "APPEARANCE & THEME",
+                    color = TextTertiaryColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "Choose your preferred color theme for maps, lines & timetables",
+                color = TextSecondaryColor,
+                fontSize = 12.sp
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Light Mode Option
+                val isLightSelected = currentThemeMode == AppThemeMode.LIGHT
+                Surface(
+                    onClick = { viewModel.setThemeMode(AppThemeMode.LIGHT) },
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isLightSelected) AccentBlue.copy(alpha = 0.15f) else Surface3Color,
+                    border = BorderStroke(1.5.dp, if (isLightSelected) AccentBlue else BorderColor),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(72.dp)
+                        .testTag("theme_option_light")
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.LightMode,
+                            contentDescription = "Light Theme",
+                            tint = if (isLightSelected) AccentBlue else TextSecondaryColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Light",
+                            color = if (isLightSelected) AccentBlue else TextPrimaryColor,
+                            fontSize = 12.sp,
+                            fontWeight = if (isLightSelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+
+                // Dark Mode Option
+                val isDarkSelected = currentThemeMode == AppThemeMode.DARK
+                Surface(
+                    onClick = { viewModel.setThemeMode(AppThemeMode.DARK) },
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDarkSelected) AccentBlue.copy(alpha = 0.15f) else Surface3Color,
+                    border = BorderStroke(1.5.dp, if (isDarkSelected) AccentBlue else BorderColor),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(72.dp)
+                        .testTag("theme_option_dark")
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.DarkMode,
+                            contentDescription = "Dark Theme",
+                            tint = if (isDarkSelected) AccentBlue else TextSecondaryColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Dark",
+                            color = if (isDarkSelected) AccentBlue else TextPrimaryColor,
+                            fontSize = 12.sp,
+                            fontWeight = if (isDarkSelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+
+                // System Default Option
+                val isSystemSelected = currentThemeMode == AppThemeMode.SYSTEM
+                Surface(
+                    onClick = { viewModel.setThemeMode(AppThemeMode.SYSTEM) },
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isSystemSelected) AccentBlue.copy(alpha = 0.15f) else Surface3Color,
+                    border = BorderStroke(1.5.dp, if (isSystemSelected) AccentBlue else BorderColor),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(72.dp)
+                        .testTag("theme_option_system")
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.BrightnessAuto,
+                            contentDescription = "System Auto Theme",
+                            tint = if (isSystemSelected) AccentBlue else TextSecondaryColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "System",
+                            color = if (isSystemSelected) AccentBlue else TextPrimaryColor,
+                            fontSize = 12.sp,
+                            fontWeight = if (isSystemSelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+
+        // API Key Configuration Card (Google Maps & Gemini AI)
+        val currentMapsApiKey by viewModel.mapsApiKey.collectAsState()
+        val currentGeminiApiKey by viewModel.geminiApiKey.collectAsState()
+        val apiKeySavedToast by viewModel.apiKeySavedToast.collectAsState()
+        var editMapsKey by remember(currentMapsApiKey) { mutableStateOf(currentMapsApiKey) }
+        var editGeminiKey by remember(currentGeminiApiKey) { mutableStateOf(currentGeminiApiKey) }
+        var isApiCardExpanded by remember { mutableStateOf(false) }
+
+        SafiriCard(testTag = "api_key_integration_card") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isApiCardExpanded = !isApiCardExpanded },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Filled.Key, contentDescription = "API Keys", tint = AccentBlue)
+                    Column {
+                        Text(
+                            text = "API KEYS & MAPS INTEGRATION",
+                            color = TextTertiaryColor,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.5.sp
+                        )
+                        Text(
+                            text = if (currentMapsApiKey.isNotBlank()) "Google Maps: Connected" else "Google Maps: Ready to configure",
+                            color = if (currentMapsApiKey.isNotBlank()) GreenAccent else TextSecondaryColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = if (isApiCardExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = "Expand API Settings",
+                    tint = TextSecondaryColor
+                )
+            }
+
+            if (isApiCardExpanded) {
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = "Configure your Google Maps and Gemini AI keys to activate live turn-by-turn map tiles and intelligent transit queries.",
+                    color = TextSecondaryColor,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Google Maps API Key Input
+                Text(
+                    text = "Google Maps API Key",
+                    color = TextPrimaryColor,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                TextField(
+                    value = editMapsKey,
+                    onValueChange = { editMapsKey = it },
+                    placeholder = { Text("Enter Google Maps API Key (AIza...)", fontSize = 12.sp, color = TextTertiaryColor) },
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Surface3Color,
+                        unfocusedContainerColor = Surface3Color,
+                        focusedTextColor = TextPrimaryColor,
+                        unfocusedTextColor = TextPrimaryColor,
+                        focusedIndicatorColor = AccentBlue,
+                        unfocusedIndicatorColor = Color.Transparent
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .testTag("maps_api_key_input"),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Gemini API Key Input
+                Text(
+                    text = "Gemini AI API Key",
+                    color = TextPrimaryColor,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                TextField(
+                    value = editGeminiKey,
+                    onValueChange = { editGeminiKey = it },
+                    placeholder = { Text("Enter Gemini API Key (AIza...)", fontSize = 12.sp, color = TextTertiaryColor) },
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Surface3Color,
+                        unfocusedContainerColor = Surface3Color,
+                        focusedTextColor = TextPrimaryColor,
+                        unfocusedTextColor = TextPrimaryColor,
+                        focusedIndicatorColor = AccentBlue,
+                        unfocusedIndicatorColor = Color.Transparent
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .testTag("gemini_api_key_input"),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Button(
+                    onClick = {
+                        viewModel.updateMapsApiKey(editMapsKey)
+                        viewModel.updateGeminiApiKey(editGeminiKey)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .testTag("save_api_keys_button"),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Save & Apply to Maps", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+
+                if (apiKeySavedToast != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = apiKeySavedToast ?: "",
+                        color = GreenAccent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // Safiri App Identity & Brand Showcase Card
+        SafiriCard(testTag = "app_brand_card") {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Image(
+                    painter = painterResource(id = com.example.R.drawable.img_app_logo),
+                    contentDescription = "Safiri Brand Logo",
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(1.dp, BorderColor, RoundedCornerShape(14.dp)),
+                    contentScale = ContentScale.Crop
+                )
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Safiri Transit",
+                            color = TextPrimaryColor,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        SafiriTag(text = "v2.4", color = GreenAccent)
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Smart School Transport & Multi-Modal Transit • Nairobi, KE",
+                        color = TextSecondaryColor,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
 
         Button(
             onClick = { viewModel.signOut() },

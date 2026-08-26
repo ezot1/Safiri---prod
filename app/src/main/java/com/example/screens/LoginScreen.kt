@@ -124,28 +124,32 @@ fun LoginScreen(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .clip(RoundedCornerShape(20.dp))
-                    .background(SurfaceColor.copy(alpha = 0.85f))
+                    .background(SurfaceColor.copy(alpha = 0.90f))
                     .border(1.dp, BorderColor, RoundedCornerShape(20.dp))
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
+                    .padding(horizontal = 18.dp, vertical = 10.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.DirectionsBus,
+                    Image(
+                        painter = painterResource(id = com.example.R.drawable.img_app_logo),
                         contentDescription = "Safiri Logo",
-                        tint = AccentBlue,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Safiri",
-                        color = TextPrimaryColor,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.5).sp
-                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Safiri",
+                            color = TextPrimaryColor,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = (-0.5).sp
+                        )
+                    }
                 }
             }
         }

@@ -3,6 +3,7 @@ package com.example.screens
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,8 +25,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.animation.core.*
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -79,9 +82,18 @@ fun AdminDashboard(
                         ) {
                             Icon(Icons.Filled.Menu, contentDescription = "Open Sidebar", tint = PurpleAccent)
                         }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Image(
+                            painter = painterResource(id = com.example.R.drawable.img_app_logo),
+                            contentDescription = "Safiri Logo",
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(RoundedCornerShape(6.dp)),
+                            contentScale = ContentScale.Crop
+                        )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "SAFIRI ADM PORTAL",
+                            text = "SAFIRI ADM",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimaryColor
@@ -1293,20 +1305,31 @@ fun AdminSidebarContent(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text(
-                        text = "SAFIRI RADAR",
-                        color = PurpleAccent,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.sp
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Image(
+                        painter = painterResource(id = com.example.R.drawable.img_app_logo),
+                        contentDescription = "Safiri Logo",
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop
                     )
-                    Text(
-                        text = "Active Routes Monitor",
-                        color = TextSecondaryColor,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "SAFIRI RADAR",
+                            color = PurpleAccent,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            text = "Active Routes Monitor",
+                            color = TextSecondaryColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
                 IconButton(
                     onClick = onClose,
