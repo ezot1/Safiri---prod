@@ -424,12 +424,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun resetData() {
-        // Initial stops list with DB Navigator Platform/Bay and Transfer data
+        // Initial stops list for School Route
         _routeStops.value = listOf(
-            RouteStop("1", "Kawangware Terminal", isCompleted = false, isCurrent = true, liveEtaMin = 2, distanceMeters = 300, platformBay = "Bay 4 (Naivasha Rd)", delayNote = "On time", transferConnection = "Matatu Route 46"),
-            RouteStop("2", "Westlands Hub", isCompleted = false, liveEtaMin = 8, distanceMeters = 1800, platformBay = "Platform 2B", delayNote = "+2 min (Bypass Traffic)", transferConnection = "Express Line 105"),
-            RouteStop("3", "Kilimani Station", isCompleted = false, isParentStop = true, liveEtaMin = 14, distanceMeters = 3400, platformBay = "Bay 1 (Valley Arcade)", delayNote = "On time", transferConnection = "School Shuttle Direct"),
-            RouteStop("4", "Upper Hill / Academy", isCompleted = false, liveEtaMin = 22, distanceMeters = 5100, platformBay = "Platform A (School Gate)", delayNote = "On time", transferConnection = "End Station Drop-off")
+            RouteStop("1", "Kawangware Pick-up Zone", isCompleted = false, isCurrent = true, liveEtaMin = 2, distanceMeters = 300, platformBay = "Gate 1 Pick-up", delayNote = "On time", transferConnection = "Shuttle KDE 732X"),
+            RouteStop("2", "Lavington Green Corner", isCompleted = false, liveEtaMin = 8, distanceMeters = 1800, platformBay = "Safe Pick-up Bay", delayNote = "On time", transferConnection = "Shuttle KDE 732X"),
+            RouteStop("3", "Kilimani Home Gate (Liam's Stop)", isCompleted = false, isParentStop = true, liveEtaMin = 14, distanceMeters = 3400, platformBay = "Estate Gate", delayNote = "On time", transferConnection = "Home Pick-up Point"),
+            RouteStop("4", "St. Mary's Academy Campus", isCompleted = false, liveEtaMin = 22, distanceMeters = 5100, platformBay = "School Gate Drop-off", delayNote = "On time", transferConnection = "Campus Reception")
         )
 
         // Community incidents feed (Moovit & Transit style)

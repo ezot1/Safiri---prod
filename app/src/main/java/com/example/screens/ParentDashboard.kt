@@ -46,7 +46,7 @@ fun ParentDashboard(
     viewModel: AppViewModel,
     modifier: Modifier = Modifier
 ) {
-    var activeTab by remember { mutableStateOf(0) } // 0: Directions, 1: Lines & Stops, 2: Plan, 3: Alerts, 4: Me
+    var activeTab by remember { mutableStateOf(0) } // 0: Track, 1: Alerts, 2: Me
     val themeMode by viewModel.themeMode.collectAsState()
     val activeAlerts by viewModel.activeAlerts.collectAsState()
 
@@ -100,7 +100,7 @@ fun ParentDashboard(
                                         .padding(horizontal = 6.dp, vertical = 2.dp)
                                 ) {
                                     Text(
-                                        text = "TRANSIT",
+                                        text = "SCHOOL TRANSIT",
                                         color = AccentBlue,
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold
@@ -116,7 +116,7 @@ fun ParentDashboard(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Nairobi Metro • Live GPS",
+                                    text = "School Shuttle • Live GPS",
                                     color = TextSecondaryColor,
                                     fontSize = 11.sp
                                 )
@@ -152,8 +152,8 @@ fun ParentDashboard(
                 NavigationBarItem(
                     selected = activeTab == 0,
                     onClick = { activeTab = 0 },
-                    icon = { Icon(Icons.Filled.DirectionsBus, contentDescription = "Directions") },
-                    label = { Text("Directions", fontSize = 11.sp, fontWeight = if (activeTab == 0) FontWeight.Bold else FontWeight.Normal) },
+                    icon = { Icon(Icons.Filled.DirectionsBus, contentDescription = "Live Track") },
+                    label = { Text("Track", fontSize = 11.sp, fontWeight = if (activeTab == 0) FontWeight.Bold else FontWeight.Normal) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = AccentBlue,
                         unselectedIconColor = TextTertiaryColor,
@@ -166,34 +166,6 @@ fun ParentDashboard(
                 NavigationBarItem(
                     selected = activeTab == 1,
                     onClick = { activeTab = 1 },
-                    icon = { Icon(Icons.Filled.Star, contentDescription = "Saved") },
-                    label = { Text("Saved", fontSize = 11.sp, fontWeight = if (activeTab == 1) FontWeight.Bold else FontWeight.Normal) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = AccentBlue,
-                        unselectedIconColor = TextTertiaryColor,
-                        selectedTextColor = AccentBlue,
-                        unselectedTextColor = TextTertiaryColor,
-                        indicatorColor = AccentBlue.copy(alpha = 0.15f)
-                    ),
-                    modifier = Modifier.testTag("parent_tab_saved")
-                )
-                NavigationBarItem(
-                    selected = activeTab == 2,
-                    onClick = { activeTab = 2 },
-                    icon = { Icon(Icons.Filled.AltRoute, contentDescription = "Plan") },
-                    label = { Text("Plan", fontSize = 11.sp, fontWeight = if (activeTab == 2) FontWeight.Bold else FontWeight.Normal) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = AccentBlue,
-                        unselectedIconColor = TextTertiaryColor,
-                        selectedTextColor = AccentBlue,
-                        unselectedTextColor = TextTertiaryColor,
-                        indicatorColor = AccentBlue.copy(alpha = 0.15f)
-                    ),
-                    modifier = Modifier.testTag("parent_tab_planner")
-                )
-                NavigationBarItem(
-                    selected = activeTab == 3,
-                    onClick = { activeTab = 3 },
                     icon = {
                         BadgedBox(
                             badge = {
@@ -210,7 +182,7 @@ fun ParentDashboard(
                             Icon(Icons.Filled.Notifications, contentDescription = "Alerts")
                         }
                     },
-                    label = { Text("Alerts", fontSize = 11.sp, fontWeight = if (activeTab == 3) FontWeight.Bold else FontWeight.Normal) },
+                    label = { Text("Alerts", fontSize = 11.sp, fontWeight = if (activeTab == 1) FontWeight.Bold else FontWeight.Normal) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = AccentBlue,
                         unselectedIconColor = TextTertiaryColor,
@@ -221,10 +193,10 @@ fun ParentDashboard(
                     modifier = Modifier.testTag("parent_tab_alerts")
                 )
                 NavigationBarItem(
-                    selected = activeTab == 4,
-                    onClick = { activeTab = 4 },
+                    selected = activeTab == 2,
+                    onClick = { activeTab = 2 },
                     icon = { Icon(Icons.Filled.Person, contentDescription = "Me") },
-                    label = { Text("Me", fontSize = 11.sp, fontWeight = if (activeTab == 4) FontWeight.Bold else FontWeight.Normal) },
+                    label = { Text("Me", fontSize = 11.sp, fontWeight = if (activeTab == 2) FontWeight.Bold else FontWeight.Normal) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = AccentBlue,
                         unselectedIconColor = TextTertiaryColor,
@@ -240,10 +212,8 @@ fun ParentDashboard(
         Box(modifier = Modifier.padding(innerPadding)) {
             when (activeTab) {
                 0 -> ParentHomeTab(viewModel)
-                1 -> ParentSavedTab(viewModel)
-                2 -> ParentPlanTab(viewModel)
-                3 -> ParentAlertsTab(viewModel)
-                4 -> ParentMeTab(viewModel)
+                1 -> ParentAlertsTab(viewModel)
+                2 -> ParentMeTab(viewModel)
             }
         }
     }
@@ -412,25 +382,7 @@ fun ParentHomeTab(viewModel: AppViewModel) {
             Spacer(modifier = Modifier.height(14.dp))
             ParentDriverMessageCard(viewModel)
             Spacer(modifier = Modifier.height(14.dp))
-
-            // Occupancy Section card
-            SafiriCard(testTag = "occupancy_card") {
-                OccupancyBar(count = 16, capacity = 22)
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Moovit Live Guidance Active Banner (if user started trip navigation)
-            MoovitLiveGuidanceBanner(viewModel)
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Integrated Real-Time Transit Features
-            LiveNavigationGuideCard(viewModel)
-            Spacer(modifier = Modifier.height(12.dp))
-            PlatformAndTransferCard(viewModel)
-            Spacer(modifier = Modifier.height(12.dp))
             LiveJourneyShareCard(viewModel)
-
             Spacer(modifier = Modifier.height(14.dp))
 
             // Today's schedule
@@ -456,385 +408,7 @@ fun ParentHomeTab(viewModel: AppViewModel) {
 }
 
 // ==========================================
-// 2. SAVED TAB (ParentSavedTab)
-// ==========================================
-@Composable
-fun ParentSavedTab(viewModel: AppViewModel) {
-    val starredStops by viewModel.starredStops.collectAsState()
-    val nearbyStops by viewModel.nearbyStops.collectAsState()
-
-    ScrollView(
-        modifier = Modifier.fillMaxSize(),
-        contentContainerStyle = Modifier.padding(16.dp)
-    ) {
-        Text(
-            text = "SAVED & FAVORITE STOPS",
-            color = TextPrimaryColor,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "Quick access to your regular pick-ups and nearbys",
-            color = TextSecondaryColor,
-            fontSize = 13.sp,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
-
-        // Starred Stops Card
-        SafiriCard(testTag = "starred_stops_card") {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(Icons.Filled.Star, contentDescription = "Favorites", tint = AmberAccent)
-                Text(
-                    text = "FAVORITE STOPS",
-                    color = TextTertiaryColor,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.5.sp
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-
-            val favoriteStopList = listOf(
-                Triple("Kilimani Stop", "Near Valley Arcade, Nairobi", "ETA 8m"),
-                Triple("St. Mary's Academy", "School Campus Drop-off", "Arrived"),
-                Triple("Kawangware Terminal", "Bus Bay 4, Naivasha Rd", "Next Day")
-            )
-
-            favoriteStopList.forEach { (name, desc, eta) ->
-                val isStarred = starredStops.contains(name)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = { viewModel.toggleStarStop(name) }) {
-                            Icon(
-                                imageVector = if (isStarred) Icons.Filled.Star else Icons.Filled.StarBorder,
-                                contentDescription = "Toggle Star",
-                                tint = if (isStarred) AmberAccent else TextTertiaryColor
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Column {
-                            Text(text = name, color = TextPrimaryColor, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            Text(text = desc, color = TextSecondaryColor, fontSize = 11.sp)
-                        }
-                    }
-                    SafiriTag(text = eta, color = if (eta == "Arrived") GreenAccent else AccentBlue)
-                }
-                HorizontalDivider(color = BorderColor)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Nearby Stops Card
-        SafiriCard(testTag = "nearby_stops_card") {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(Icons.Filled.MyLocation, contentDescription = "Location", tint = AccentBlue)
-                Text(
-                    text = "NEARBY STOPS DETECTED",
-                    color = TextTertiaryColor,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.5.sp
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-
-            nearbyStops.forEach { (name, distance) ->
-                val isSaved = starredStops.contains(name)
-                val btnColor by animateColorAsState(if (isSaved) GreenAccent else Surface3Color, label = "SaveBtnColor")
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = name, color = TextPrimaryColor, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        Text(text = distance, color = TextSecondaryColor, fontSize = 11.sp)
-                    }
-                    Button(
-                        onClick = { viewModel.toggleStarStop(name) },
-                        colors = ButtonDefaults.buttonColors(containerColor = btnColor),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        modifier = Modifier.height(32.dp),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            text = if (isSaved) "Saved ✓" else "Save",
-                            color = if (isSaved) BackgroundColor else TextPrimaryColor,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-                HorizontalDivider(color = BorderColor)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Moovit Transit Lines & Timetables Explorer
-        MoovitLinesExplorerCard(viewModel)
-    }
-}
-
-// ==========================================
-// 3. PLAN TAB (ParentPlanTab)
-// ==========================================
-@Composable
-fun ParentPlanTab(viewModel: AppViewModel) {
-    var fromText by remember { mutableStateOf("Kilimani, Nairobi") }
-    var toText by remember { mutableStateOf("St. Mary's Academy") }
-    val selectedOption by viewModel.selectedRouteOption.collectAsState()
-    val coroutineScope = rememberCoroutineScope()
-    var isSearching by remember { mutableStateOf(false) }
-    var searchCompleted by remember { mutableStateOf(false) }
-
-    ScrollView(
-        modifier = Modifier.fillMaxSize(),
-        contentContainerStyle = Modifier.padding(16.dp)
-    ) {
-        Text(
-            text = "PLAN YOUR TRIP",
-            color = TextPrimaryColor,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "Compare schools transit lanes, delays & timings",
-            color = TextSecondaryColor,
-            fontSize = 13.sp,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
-
-        // Moovit Multi-Modal Trip Planner with Live Turn-by-Turn Guidance
-        MoovitMultiModalPlannerCard(viewModel)
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Search inputs
-        SafiriCard(testTag = "planner_form") {
-            Text(text = "FROM", color = TextTertiaryColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(4.dp))
-            TextField(
-                value = fromText,
-                onValueChange = { fromText = it },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = SurfaceColor,
-                    unfocusedContainerColor = SurfaceColor,
-                    focusedTextColor = TextPrimaryColor,
-                    unfocusedTextColor = TextPrimaryColor,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(text = "TO", color = TextTertiaryColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(4.dp))
-            TextField(
-                value = toText,
-                onValueChange = { toText = it },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = SurfaceColor,
-                    unfocusedContainerColor = SurfaceColor,
-                    focusedTextColor = TextPrimaryColor,
-                    unfocusedTextColor = TextPrimaryColor,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Button(
-                onClick = {
-                    coroutineScope.launch {
-                        isSearching = true
-                        searchCompleted = false
-                        delay(1200)
-                        isSearching = false
-                        searchCompleted = true
-                    }
-                },
-                enabled = !isSearching,
-                colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
-                modifier = Modifier.fillMaxWidth().testTag("search_routes_button"),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                if (isSearching) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = BackgroundColor,
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Optimizing route...")
-                } else {
-                    Text("Search routes", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-
-        if (searchCompleted) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(GreenAccent.copy(alpha = 0.15f))
-                    .border(1.dp, GreenAccent, RoundedCornerShape(8.dp))
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.CheckCircle,
-                    contentDescription = "Success",
-                    tint = GreenAccent,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = "Optimal lanes updated! Erick Mwangi's shuttle (KDE 732X) is verified as the fastest path from $fromText to $toText.",
-                    color = TextPrimaryColor,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Compare Options
-        Text(
-            text = "AVAILABLE ROUTE SHUTTLES",
-            color = TextTertiaryColor,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.5.sp,
-            modifier = Modifier.padding(vertical = 8.dp)
-        )
-
-        // Option 1: Fastest (Accent blue)
-        RouteOptionCard(
-            plate = "KDE 732X",
-            driver = "Erick Mwangi",
-            duration = "34 min",
-            schedule = "06:45 AM - 07:19 AM",
-            stops = "Kilimani • Westlands • Academy",
-            isAlternative = false,
-            isSelected = selectedOption == "fastest",
-            onClick = { viewModel.selectRouteOption("fastest") },
-            testTag = "route_option_1"
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Option 2: Alternative (Purple)
-        RouteOptionCard(
-            plate = "KDE 119A",
-            driver = "John Kiprop",
-            duration = "45 min",
-            schedule = "06:30 AM - 07:15 AM",
-            stops = "Kawangware • Kilimani • Upper Hill • Academy",
-            isAlternative = true,
-            isSelected = selectedOption == "alternative",
-            onClick = { viewModel.selectRouteOption("alternative") },
-            testTag = "route_option_2"
-        )
-    }
-}
-
-@Composable
-fun RouteOptionCard(
-    plate: String,
-    driver: String,
-    duration: String,
-    schedule: String,
-    stops: String,
-    isAlternative: Boolean,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    testTag: String
-) {
-    val borderColor = if (isSelected) {
-        if (isAlternative) PurpleAccent else AccentBlue
-    } else {
-        BorderColor
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Surface2Color)
-            .border(1.dp, borderColor, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(16.dp)
-            .testTag(testTag)
-    ) {
-        Column {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SafiriTag(text = plate, color = if (isAlternative) PurpleAccent else AccentBlue)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Driver: $driver", color = TextPrimaryColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-                Text(
-                    text = duration,
-                    color = if (isAlternative) PurpleAccent else AccentBlue,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Black
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(text = schedule, color = TextPrimaryColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                if (isAlternative) {
-                    Text(text = "Alternative", color = PurpleAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                } else {
-                    Text(text = "Fastest Route", color = GreenAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(text = "STOPS: $stops", color = TextSecondaryColor, fontSize = 11.sp, lineHeight = 14.sp)
-        }
-    }
-}
-
-// ==========================================
-// 4. ALERTS TAB (ParentAlertsTab)
+// 2. ALERTS TAB (ParentAlertsTab)
 // ==========================================
 @Composable
 fun ParentAlertsTab(viewModel: AppViewModel) {
@@ -907,56 +481,83 @@ fun ParentAlertsTab(viewModel: AppViewModel) {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // Active Fleet Occupancy Mini-Bars
-        Text(
-            text = "ACTIVE FLEET OCCUPANCY RATES",
-            color = TextTertiaryColor,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.5.sp,
-            modifier = Modifier.padding(vertical = 8.dp)
-        )
+        // School Transport Safety & Support Desk
+        SafiriCard(testTag = "school_transport_safety_card") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(GreenAccent.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Security,
+                            contentDescription = "School Safety",
+                            tint = GreenAccent,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "SCHOOL TRANSIT SAFETY PROTOCOL",
+                            color = GreenAccent,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.2.sp
+                        )
+                        Text(
+                            text = "All school shuttles monitored via GPS & NFC check-in",
+                            color = TextSecondaryColor,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
 
-        SafiriCard(testTag = "fleet_occupancy_card") {
-            FleetMiniBar(plate = "KDE 732X", occupancy = "18/22", progress = 0.81f, color = AmberAccent)
-            FleetMiniBar(plate = "KDE 119A", occupancy = "12/22", progress = 0.54f, color = AmberAccent)
-            FleetMiniBar(plate = "KDE 540R", occupancy = "21/22", progress = 0.95f, color = RedAccent)
-            FleetMiniBar(plate = "KDE 902Y", occupancy = "8/22", progress = 0.36f, color = GreenAccent)
-        }
-    }
-}
+            Spacer(modifier = Modifier.height(12.dp))
 
-@Composable
-fun FleetMiniBar(plate: String, occupancy: String, progress: Float, color: Color) {
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(text = plate, color = TextPrimaryColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Text(text = occupancy, color = TextSecondaryColor, fontSize = 11.sp)
-        }
-        Spacer(modifier = Modifier.height(6.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(6.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(Surface3Color)
-        ) {
-            Box(
+            Row(
                 modifier = Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(progress)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(color)
-            )
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Surface3Color)
+                    .padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.SupportAgent,
+                    contentDescription = "Transport Helpdesk",
+                    tint = AccentBlue,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "School Transport Desk",
+                        color = TextPrimaryColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "St. Austin's Academy Dispatch: +254 700 123 456",
+                        color = TextSecondaryColor,
+                        fontSize = 11.sp
+                    )
+                }
+            }
         }
     }
 }
 
 // ==========================================
-// 5. ME TAB (ParentMeTab)
+// 3. ME TAB (ParentMeTab)
 // ==========================================
 @Composable
 fun ParentMeTab(viewModel: AppViewModel) {

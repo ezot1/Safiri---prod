@@ -889,14 +889,14 @@ fun MoovitMultiModalPlannerCard(
                 Spacer(modifier = Modifier.width(8.dp))
                 Column {
                     Text(
-                        text = "MULTI-MODAL TRIP PLANNER",
+                        text = "SCHOOL COMMUTE ROUTE PLANNER",
                         color = AmberAccent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
                         letterSpacing = 1.2.sp
                     )
                     Text(
-                        text = "Compare optimal bus lanes, walk times & transfers",
+                        text = "Compare optimal school routes, pickup timings & bus drop-offs",
                         color = TextSecondaryColor,
                         fontSize = 10.sp
                     )
@@ -906,15 +906,15 @@ fun MoovitMultiModalPlannerCard(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Filter chips (Best Route, Fewest Transfers, Least Walking)
+        // Filter chips (Fastest, Direct Route, Closest Pickup)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             listOf(
                 "BEST_ROUTE" to "Fastest",
-                "FEWEST_TRANSFERS" to "Fewest Transfers",
-                "LEAST_WALKING" to "Least Walking"
+                "FEWEST_TRANSFERS" to "Direct Route",
+                "LEAST_WALKING" to "Closest Pickup"
             ).forEach { (filterKey, label) ->
                 val isSelected = selectedFilter == filterKey
                 FilterChip(
@@ -1004,7 +1004,7 @@ fun MoovitPlanCard(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "${plan.departureTime} → ${plan.arrivalTime} • ${plan.walkMinutes}m walk • ${plan.crowdLevel}",
+                        text = "${plan.departureTime} → ${plan.arrivalTime} • ${plan.walkMinutes}m safe walk • Shuttle ${plan.primaryBusPlate}",
                         color = TextSecondaryColor,
                         fontSize = 11.sp
                     )
@@ -1038,7 +1038,7 @@ fun MoovitPlanCard(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "TURN-BY-TURN TRANSIT STEPS",
+                    text = "SCHOOL ROUTE PICK-UP & DROP-OFF STOPS",
                     color = TextTertiaryColor,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
@@ -1072,8 +1072,8 @@ fun MoovitPlanCard(
                                 imageVector = when (step.type) {
                                     ItineraryStepType.WALK_TO_STOP, ItineraryStepType.WALK_TO_DESTINATION -> Icons.Filled.DirectionsWalk
                                     ItineraryStepType.BOARD_BUS, ItineraryStepType.RIDE_BUS -> Icons.Filled.DirectionsBus
-                                    ItineraryStepType.ALIGHT -> Icons.Filled.ExitToApp
-                                    ItineraryStepType.TRANSFER -> Icons.Filled.TransferWithinAStation
+                                    ItineraryStepType.ALIGHT -> Icons.Filled.School
+                                    ItineraryStepType.TRANSFER -> Icons.Filled.DirectionsBus
                                 },
                                 contentDescription = null,
                                 tint = when (step.type) {
@@ -1100,32 +1100,6 @@ fun MoovitPlanCard(
                             fontWeight = FontWeight.Medium
                         )
                     }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Start live guidance button
-                Button(
-                    onClick = onStartLiveGuidance,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isActiveLiveGuidance) GreenAccent else AccentBlue
-                    ),
-                    modifier = Modifier.fillMaxWidth().testTag("start_guidance_${plan.id}"),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isActiveLiveGuidance) Icons.Filled.Navigation else Icons.Filled.PlayArrow,
-                        contentDescription = "Start",
-                        tint = BackgroundColor,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (isActiveLiveGuidance) "Live Guidance Active" else "Start Live Guidance (Get-Off Alerts)",
-                        color = BackgroundColor,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
                 }
             }
         }
