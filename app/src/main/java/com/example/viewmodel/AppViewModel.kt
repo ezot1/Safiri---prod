@@ -1,26 +1,52 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.util.Log
 import java.security.MessageDigest
-import java.util.concurrent.ConcurrentHashMap
+import java.security.SecureRandom
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.BuildConfig
+import com.example.R
 import com.example.database.AppDatabase
+import com.example.database.FirestoreBusAlert
+import com.example.database.FirestoreCommunityIncident
+import com.example.database.FirestoreInterportalMessage
+import com.example.database.FirestoreStudent
+import com.example.database.FirestoreUserProfile
+import com.example.database.OperationType
+import com.example.database.SafiriFirestoreRepository
 import com.example.database.UserEntity
+import com.example.database.handleFirestoreError
+import com.example.database.unwrapFirestoreException
+import com.example.location.DriverLocationTracker
 import com.example.models.*
+import com.example.notifications.SafiriNotificationManager
+import com.example.security.AppRateLimiter
+import com.example.security.GoogleAuthHelper
+import com.example.security.SharedPreferencesRateLimitStore
 import com.example.ui.theme.*
+import com.google.firebase.Firebase
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.example.network.GeminiRepository
 import com.google.android.gms.tasks.Task
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -46,9 +72,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             if (FirebaseApp.getApps(application).isEmpty()) {
                 FirebaseApp.initializeApp(application)
             }
-            FirebaseAuth.getInstance()
+            Firebase.auth
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w("AppViewModel", "FirebaseAuth unavailable: ${e.message}")
             null
         }
     }
@@ -61,11 +87,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             if (FirebaseApp.getApps(application).isEmpty()) {
                 FirebaseApp.initializeApp(application)
             }
-            FirebaseFirestore.getInstance()
+            val databaseId = application.getString(R.string.firestore_database_id)
+            FirebaseFirestore.getInstance(databaseId)
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w("AppViewModel", "Firestore unavailable: ${e.message}")
             null
         }
+    }
+
+    private val firestoreRepository: SafiriFirestoreRepository? by lazy {
+        firestore?.let { SafiriFirestoreRepository(it) }
     }
 
     val isFirestoreEnabled: Boolean
@@ -81,63 +112,42 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- RATE LIMITING STATE ---
-    private val lastSignInAttemptTime = ConcurrentHashMap<String, Long>()
-    private val signInFailCount = ConcurrentHashMap<String, Int>()
-    private val lockUntilTime = ConcurrentHashMap<String, Long>()
-    private val lastSignUpAttemptTime = ConcurrentHashMap<String, Long>()
+    // --- PERSISTENT RATE LIMITING ENGINE ---
+    private val rateLimiter by lazy {
+        AppRateLimiter(SharedPreferencesRateLimitStore(application))
+    }
+
+    private val _rateLimitNotice = MutableStateFlow<String?>(null)
+    val rateLimitNotice: StateFlow<String?> = _rateLimitNotice.asStateFlow()
+
+    private val _aiRemainingDailyQuota = MutableStateFlow(AppRateLimiter.AI_DAILY_QUOTA)
+    val aiRemainingDailyQuota: StateFlow<Int> = _aiRemainingDailyQuota.asStateFlow()
+
+    fun clearRateLimitNotice() {
+        _rateLimitNotice.value = null
+    }
+
+    fun refreshAiQuota() {
+        val userKey = _currentUser.value ?: "guest"
+        _aiRemainingDailyQuota.value = rateLimiter.getRemainingDailyAiQuota(userKey)
+    }
 
     private fun checkSignInRateLimit(email: String): Pair<Boolean, String> {
-        val currentTime = System.currentTimeMillis()
-        val trimmedEmail = email.trim().lowercase()
-
-        // 1. Check lock
-        val lockUntil = lockUntilTime[trimmedEmail] ?: 0L
-        if (currentTime < lockUntil) {
-            val remainingSec = ((lockUntil - currentTime) / 1000).coerceAtLeast(1)
-            return Pair(false, "Too many failed attempts. Account temporarily locked. Try again in $remainingSec seconds.")
-        }
-
-        // 2. Check rapid sign-ins (max 1 every 2 seconds)
-        val lastAttempt = lastSignInAttemptTime[trimmedEmail] ?: 0L
-        if (currentTime - lastAttempt < 2000) {
-            return Pair(false, "Please wait a moment before trying again.")
-        }
-
-        return Pair(true, "")
+        val decision = rateLimiter.checkSignIn(email)
+        return Pair(decision.allowed, decision.message)
     }
 
     private fun recordSignInAttempt(email: String, success: Boolean) {
-        val currentTime = System.currentTimeMillis()
-        val trimmedEmail = email.trim().lowercase()
-        lastSignInAttemptTime[trimmedEmail] = currentTime
-
-        if (success) {
-            signInFailCount.remove(trimmedEmail)
-            lockUntilTime.remove(trimmedEmail)
-        } else {
-            val currentFails = (signInFailCount[trimmedEmail] ?: 0) + 1
-            signInFailCount[trimmedEmail] = currentFails
-            if (currentFails >= 5) {
-                lockUntilTime[trimmedEmail] = currentTime + 30000 // Lock for 30 seconds
-                signInFailCount.remove(trimmedEmail) // Reset fail count after locking
-            }
-        }
+        rateLimiter.recordSignInOutcome(email, success)
     }
 
     private fun checkSignUpRateLimit(email: String): Pair<Boolean, String> {
-        val currentTime = System.currentTimeMillis()
-        val trimmedEmail = email.trim().lowercase()
-
-        val lastAttempt = lastSignUpAttemptTime[trimmedEmail] ?: 0L
-        if (currentTime - lastAttempt < 5000) {
-            return Pair(false, "Please wait 5 seconds between registration attempts.")
-        }
-        return Pair(true, "")
+        val decision = rateLimiter.checkAndConsumeSignUp(email)
+        return Pair(decision.allowed, decision.message)
     }
 
     private fun recordSignUpAttempt(email: String) {
-        lastSignUpAttemptTime[email.trim().lowercase()] = System.currentTimeMillis()
+        // Recorded atomically in checkAndConsumeSignUp
     }
 
     // --- AUTHENTICATION STATE ---
@@ -333,65 +343,70 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _themeMode.value = if (_themeMode.value == AppThemeMode.DARK) AppThemeMode.LIGHT else AppThemeMode.DARK
     }
 
-    // --- GOOGLE MAPS & GEMINI API KEY INTEGRATION ---
+    // --- GOOGLE MAPS API KEY INTEGRATION (Secrets / BuildConfig only) ---
     private val _mapsApiKey = MutableStateFlow<String>(
         try {
             val key = com.example.BuildConfig.GOOGLE_MAPS_API_KEY
-            if (key.isNullOrBlank() || key == "MY_GOOGLE_MAPS_API_KEY") "" else key
-        } catch (e: Exception) {
+            if (key.isNullOrBlank() ||
+                key == "MY_GOOGLE_MAPS_API_KEY" ||
+                key == "YOUR_GOOGLE_MAPS_API_KEY" ||
+                key.contains("placeholder")
+            ) {
+                ""
+            } else {
+                key
+            }
+        } catch (_: Exception) {
             ""
         }
     )
     val mapsApiKey: StateFlow<String> = _mapsApiKey.asStateFlow()
 
-    private val _geminiApiKey = MutableStateFlow<String>(
-        try {
-            val key = com.example.BuildConfig.GEMINI_API_KEY
-            if (key.isNullOrBlank() || key == "MY_GEMINI_API_KEY") "" else key
-        } catch (e: Exception) {
-            ""
-        }
-    )
-    val geminiApiKey: StateFlow<String> = _geminiApiKey.asStateFlow()
+    // --- REAL GPS TELEMETRY STATE ---
+    private val _isLiveGpsTrackingActive = MutableStateFlow(false)
+    val isLiveGpsTrackingActive: StateFlow<Boolean> = _isLiveGpsTrackingActive.asStateFlow()
 
-    private val _apiKeySavedToast = MutableStateFlow<String?>(null)
-    val apiKeySavedToast: StateFlow<String?> = _apiKeySavedToast.asStateFlow()
+    private val _driverGpsLat = MutableStateFlow(-1.2825)
+    val driverGpsLat: StateFlow<Double> = _driverGpsLat.asStateFlow()
 
-    fun updateMapsApiKey(newKey: String) {
-        _mapsApiKey.value = newKey.trim()
-        _apiKeySavedToast.value = "Google Maps API Key configured successfully!"
-    }
+    private val _driverGpsLng = MutableStateFlow(36.7450)
+    val driverGpsLng: StateFlow<Double> = _driverGpsLng.asStateFlow()
 
-    fun updateGeminiApiKey(newKey: String) {
-        _geminiApiKey.value = newKey.trim()
-        com.example.network.GeminiRepository.setCustomApiKey(newKey.trim())
-        _apiKeySavedToast.value = "Gemini API Key configured successfully!"
-    }
+    private val _driverSpeedKmh = MutableStateFlow(0)
+    val driverSpeedKmh: StateFlow<Int> = _driverSpeedKmh.asStateFlow()
 
-    fun dismissApiKeyToast() {
-        _apiKeySavedToast.value = null
-    }
+    private val _telemetrySourceLabel = MutableStateFlow("SCHEDULE ESTIMATE")
+    val telemetrySourceLabel: StateFlow<String> = _telemetrySourceLabel.asStateFlow()
 
-    // Job holding the simulation tick loop
+    private val _locationErrorNotice = MutableStateFlow<String?>(null)
+    val locationErrorNotice: StateFlow<String?> = _locationErrorNotice.asStateFlow()
+
+    // Job holding the simulation tick loop, GPS tracker, and auth-gated Firestore listeners
     private var simulationJob: Job? = null
+    private var gpsTrackingJob: Job? = null
+    private var lastTelemetrySyncMs = 0L
     private var adminDriftTicks = 0f
+    private val firestoreSyncJobs = mutableListOf<Job>()
+    private var activeFirestoreSyncKey: String? = null
+    private var firebaseAuthListener: FirebaseAuth.AuthStateListener? = null
 
     init {
-        try {
-            firebaseAuth?.signOut()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
         _currentUser.value = null
         _currentRole.value = null
         _currentUserName.value = "User"
+        SafiriNotificationManager.ensureChannels(application)
         resetData()
-        seedDefaultUsers()
+        if (BuildConfig.DEBUG) {
+            seedDefaultUsers()
+        }
         startSimulation()
         setupFirebaseAuthListener()
     }
 
     companion object {
+        private const val PBKDF2_PREFIX = "pbkdf2:"
+        private const val PBKDF2_ITERATIONS = 12000
+
         fun hashPassword(password: String): String {
             return try {
                 val digest = MessageDigest.getInstance("SHA-256")
@@ -400,6 +415,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 password
             }
+        }
+
+        fun hashPasswordSalted(password: String): String {
+            return try {
+                val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
+                val spec = PBEKeySpec(password.toCharArray(), salt, PBKDF2_ITERATIONS, 256)
+                val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+                val hash = factory.generateSecret(spec).encoded
+                val saltHex = salt.joinToString("") { "%02x".format(it) }
+                val hashHex = hash.joinToString("") { "%02x".format(it) }
+                "$PBKDF2_PREFIX$saltHex:$hashHex"
+            } catch (_: Exception) {
+                hashPassword(password)
+            }
+        }
+
+        fun verifyPassword(rawPassword: String, storedHash: String): Boolean {
+            if (storedHash.startsWith(PBKDF2_PREFIX)) {
+                val parts = storedHash.removePrefix(PBKDF2_PREFIX).split(":")
+                if (parts.size != 2) return false
+                val salt = parts[0].chunked(2).mapNotNull { it.toIntOrNull(16)?.toByte() }.toByteArray()
+                val expectedHex = parts[1]
+                val spec = PBEKeySpec(rawPassword.toCharArray(), salt, PBKDF2_ITERATIONS, 256)
+                val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+                val actualHex = factory.generateSecret(spec).encoded.joinToString("") { "%02x".format(it) }
+                return MessageDigest.isEqual(actualHex.toByteArray(), expectedHex.toByteArray())
+            }
+            val legacy = hashPassword(rawPassword)
+            return MessageDigest.isEqual(legacy.toByteArray(), storedHash.toByteArray())
         }
     }
 
@@ -927,23 +971,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun paySubscriptionInvoice(phoneNumber: String, amount: String) {
+        val cleanPhone = phoneNumber.replace(" ", "").replace("-", "").trim()
+        val kenyanPhoneRegex = Regex("^(?:0[17]|\\+?254[17])\\d{8}$")
+        if (!kenyanPhoneRegex.matches(cleanPhone)) {
+            _subscriptionToast.value = "Enter a valid Kenyan M-Pesa number (e.g., 0712345678 or +254712345678)."
+            return
+        }
+
+        val normalizedAmount = amount.replace(",", "").replace("KES", "", ignoreCase = true).trim()
+        val numericAmount = normalizedAmount.toDoubleOrNull()
+        if (numericAmount == null || numericAmount <= 0.0) {
+            _subscriptionToast.value = "Enter a valid billing amount greater than 0 KES."
+            return
+        }
+
         viewModelScope.launch {
             _paymentProcessing.value = true
-            delay(1500)
-            val newReceipt = "REC-${(100000..999999).random()}"
+            delay(800)
+            val previewRef = "PREV-${(100000..999999).random()}"
             val newInvoice = InvoiceItem(
-                id = "INV-2026-${(100..999).random()}",
-                date = "23 Jul 2026",
-                amount = if (amount.isBlank()) "KES 15,000" else amount,
-                status = "PAID",
-                paymentMethod = if (phoneNumber.isNotBlank()) "M-Pesa ($phoneNumber)" else "M-Pesa 247247",
-                receiptNumber = newReceipt
+                id = "INV-PREV-${(100..999).random()}",
+                date = "Preview • Sandbox",
+                amount = "KES ${numericAmount.toInt()}",
+                status = "SANDBOX_PREVIEW",
+                paymentMethod = "M-Pesa STK ($cleanPhone)",
+                receiptNumber = previewRef
             )
             _invoiceHistory.value = listOf(newInvoice) + _invoiceHistory.value
-            _subscriptionStatus.value = SubscriptionStatus.ACTIVE
-            _nextDueDate.value = "August 23, 2026"
             _paymentProcessing.value = false
-            _subscriptionToast.value = "Payment Received! Receipt #$newReceipt. Fleet tracking reactivated!"
+            _subscriptionToast.value = "Sandbox preview recorded (#$previewRef). Connect a live M-Pesa Daraja STK backend webhook to process production charges."
         }
     }
 
@@ -951,149 +1007,190 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _subscriptionToast.value = null
     }
 
-    // Sign in logic with password verification, Firebase Auth integration, and portal-based role checks
+    // Sign in logic enforcing credential verification, role separation, and fail-closed lookup
     fun signIn(email: String, passwordRaw: String = "", role: UserRole, onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
         viewModelScope.launch {
             try {
                 val trimmedEmail = email.trim().lowercase()
-                
+
                 val limitCheck = checkSignInRateLimit(trimmedEmail)
                 if (!limitCheck.first) {
                     onComplete(false, limitCheck.second)
                     return@launch
                 }
 
-                // Immediately set current time to block concurrent/rapid requests
-                lastSignInAttemptTime[trimmedEmail] = System.currentTimeMillis()
-
-                var firebaseSuccess = false
-                if (firebaseAuth != null) {
-                    try {
-                        firebaseAuth!!.signInWithEmailAndPassword(trimmedEmail, passwordRaw).await()
-                        firebaseSuccess = true
-                    } catch (e: Exception) {
-                        val msg = e.message ?: ""
-                        if (msg.contains("no firebase app", ignoreCase = true) ||
-                            msg.contains("not initialized", ignoreCase = true) ||
-                            e is IllegalStateException) {
-                            firebaseSuccess = false
-                        } else {
-                            recordSignInAttempt(trimmedEmail, success = false)
-                            onComplete(false, "Firebase Auth: ${e.localizedMessage ?: e.message}")
-                            return@launch
-                        }
-                    }
+                val user = userDao?.getUserByEmail(trimmedEmail)
+                if (user == null) {
+                    recordSignInAttempt(trimmedEmail, success = false)
+                    onComplete(false, "No account found for this email. Please sign in with Google or register a Parent account.")
+                    return@launch
                 }
 
-                if (firebaseSuccess) {
-                    // Firebase Auth succeeded. Retrieve role information from local Room database.
-                    val user = userDao?.getUserByEmail(trimmedEmail)
-                    if (user != null) {
-                        val userRole = when (user.role) {
-                            "PARENT" -> UserRole.PARENT
-                            "DRIVER" -> UserRole.DRIVER
-                            "ADMIN" -> UserRole.ADMIN
-                            else -> role
-                        }
-                        
-                        // Enforce distinct login portals
-                        if (userRole != role) {
-                            firebaseAuth?.signOut()
-                            val expectedPortal = when (userRole) {
-                                UserRole.PARENT -> "Parent"
-                                UserRole.DRIVER -> "Driver"
-                                UserRole.ADMIN -> "School Administrator"
-                            }
-                            onComplete(false, "This account is registered as a $expectedPortal. Please use the correct login portal.")
-                            return@launch
-                        }
-
-                        _currentUser.value = user.email
-                        _currentRole.value = userRole
-                        _currentUserName.value = user.name
-                        recordSignInAttempt(trimmedEmail, success = true)
-                        onComplete(true, "Signed in successfully with Firebase!")
-                    } else {
-                        // User exists in Firebase but not locally. Map them to the selected portal role.
-                        val stringRole = when (role) {
-                            UserRole.PARENT -> "PARENT"
-                            UserRole.DRIVER -> "DRIVER"
-                            UserRole.ADMIN -> "ADMIN"
-                        }
-                        val defaultName = trimmedEmail.substringBefore("@").replaceFirstChar { it.uppercase() }
-                        val newUser = UserEntity(trimmedEmail, defaultName, stringRole, "firebase_email", "")
-                        userDao?.insertUser(newUser)
-
-                        _currentUser.value = trimmedEmail
-                        _currentRole.value = role
-                        _currentUserName.value = defaultName
-                        recordSignInAttempt(trimmedEmail, success = true)
-                        onComplete(true, "Signed in successfully with Firebase!")
-                    }
-                } else {
-                    // Fallback to local Room database authentication
-                    val user = userDao?.getUserByEmail(trimmedEmail)
-                    if (user != null) {
-                        if (user.provider == "email") {
-                            val hashedInput = hashPassword(passwordRaw)
-                            if (user.passwordHash != hashedInput) {
-                                recordSignInAttempt(trimmedEmail, success = false)
-                                onComplete(false, "Invalid password.")
-                                return@launch
-                            }
-                        }
-                        val userRole = when (user.role) {
-                            "PARENT" -> UserRole.PARENT
-                            "DRIVER" -> UserRole.DRIVER
-                            "ADMIN" -> UserRole.ADMIN
-                            else -> role
-                        }
-
-                        // Enforce distinct login portals
-                        if (userRole != role) {
-                            val expectedPortal = when (userRole) {
-                                UserRole.PARENT -> "Parent"
-                                UserRole.DRIVER -> "Driver"
-                                UserRole.ADMIN -> "School Administrator"
-                            }
-                            onComplete(false, "This account is registered as a $expectedPortal. Please use the correct login portal.")
-                            return@launch
-                        }
-
-                        _currentUser.value = user.email
-                        _currentRole.value = userRole
-                        _currentUserName.value = user.name
-                        recordSignInAttempt(trimmedEmail, success = true)
-                        onComplete(true, "Signed in successfully!")
-                    } else {
-                        // Pre-registered fallback check for instant login of any typed email for simplicity
-                        val stringRole = when (role) {
-                            UserRole.PARENT -> "PARENT"
-                            UserRole.DRIVER -> "DRIVER"
-                            UserRole.ADMIN -> "ADMIN"
-                        }
-                        val defaultName = trimmedEmail.substringBefore("@").replaceFirstChar { it.uppercase() }
-                        val newUser = UserEntity(trimmedEmail, defaultName, stringRole, "email", hashPassword(passwordRaw.ifEmpty { "demo1234" }))
-                        userDao?.insertUser(newUser)
-                        
-                        _currentUser.value = trimmedEmail
-                        _currentRole.value = role
-                        _currentUserName.value = defaultName
-                        recordSignInAttempt(trimmedEmail, success = true)
-                        onComplete(true, "Signed in successfully!")
-                    }
+                if (user.provider == "google") {
+                    onComplete(false, "This account uses Google Sign-In. Please tap 'Sign In with Google'.")
+                    return@launch
                 }
+
+                if (!verifyPassword(passwordRaw, user.passwordHash)) {
+                    recordSignInAttempt(trimmedEmail, success = false)
+                    onComplete(false, "Invalid email or password.")
+                    return@launch
+                }
+
+                val userRole = when (user.role) {
+                    "PARENT" -> UserRole.PARENT
+                    "DRIVER" -> UserRole.DRIVER
+                    "ADMIN" -> UserRole.ADMIN
+                    else -> UserRole.PARENT
+                }
+
+                if (userRole != role) {
+                    val expectedPortal = when (userRole) {
+                        UserRole.PARENT -> "Parent"
+                        UserRole.DRIVER -> "Driver"
+                        UserRole.ADMIN -> "School Administrator"
+                    }
+                    onComplete(false, "This account is registered as a $expectedPortal. Please use the correct login portal.")
+                    return@launch
+                }
+
+                _currentUser.value = user.email
+                _currentRole.value = userRole
+                _currentUserName.value = user.name
+                recordSignInAttempt(trimmedEmail, success = true)
+                onComplete(true, "Signed in successfully!")
             } catch (e: Exception) {
                 onComplete(false, "Authentication error: ${e.message}")
             }
         }
     }
 
-    // Sign up logic storing data locally in Room and also with Firebase Auth if available
+    fun handleGoogleFirebaseUser(
+        firebaseUser: FirebaseUser,
+        selectedRole: UserRole,
+        isSignUpMode: Boolean,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            val email = firebaseUser.email?.trim()?.lowercase()
+            if (email.isNullOrBlank()) {
+                GoogleAuthHelper.clearAndSignOut(getApplication())
+                onComplete(false, "Google account did not return an email address.")
+                return@launch
+            }
+
+            val limitCheck = checkSignInRateLimit(email)
+            if (!limitCheck.first) {
+                GoogleAuthHelper.clearAndSignOut(getApplication())
+                onComplete(false, limitCheck.second)
+                return@launch
+            }
+
+            val existing = userDao?.getUserByEmail(email)
+            val remoteProfileResult = firestoreRepository?.getUserProfile(firebaseUser.uid)
+            val remoteProfile = remoteProfileResult?.getOrNull()
+
+            if (existing != null || remoteProfile != null) {
+                val effectiveRoleStr = remoteProfile?.role ?: existing?.role ?: "PARENT"
+                val registeredRole = when (effectiveRoleStr) {
+                    "PARENT" -> UserRole.PARENT
+                    "DRIVER" -> UserRole.DRIVER
+                    "ADMIN" -> UserRole.ADMIN
+                    else -> UserRole.PARENT
+                }
+                if (registeredRole != selectedRole) {
+                    GoogleAuthHelper.clearAndSignOut(getApplication())
+                    val expectedPortal = when (registeredRole) {
+                        UserRole.PARENT -> "Parent"
+                        UserRole.DRIVER -> "Driver"
+                        UserRole.ADMIN -> "School Administrator"
+                    }
+                    onComplete(false, "This account is registered as a $expectedPortal. Please use the correct login portal.")
+                    return@launch
+                }
+                val resolvedName = remoteProfile?.displayName?.takeIf { it.isNotBlank() }
+                    ?: existing?.name
+                    ?: firebaseUser.displayName?.takeIf { it.isNotBlank() }
+                    ?: email.substringBefore("@").replaceFirstChar { it.uppercase() }
+
+                userDao?.insertUser(
+                    UserEntity(
+                        email = email,
+                        name = resolvedName,
+                        role = effectiveRoleStr,
+                        provider = "google",
+                        passwordHash = ""
+                    )
+                )
+
+                _currentUser.value = email
+                _currentRole.value = registeredRole
+                _currentUserName.value = resolvedName
+                startFirestoreRealtimeSync(firebaseUser.uid, registeredRole)
+                recordSignInAttempt(email, success = true)
+                onComplete(true, "Signed in with Google!")
+                return@launch
+            }
+
+            // New Google user: block self-assigning privileged Driver or Admin roles
+            if (selectedRole != UserRole.PARENT) {
+                GoogleAuthHelper.clearAndSignOut(getApplication())
+                onComplete(false, "Driver and School Administrator accounts must be provisioned by your school administrator.")
+                return@launch
+            }
+
+            val displayName = firebaseUser.displayName?.takeIf { it.isNotBlank() }
+                ?: email.substringBefore("@").replaceFirstChar { it.uppercase() }
+
+            val newUser = UserEntity(
+                email = email,
+                name = displayName,
+                role = "PARENT",
+                provider = "google",
+                passwordHash = ""
+            )
+            userDao?.insertUser(newUser)
+
+            firestoreRepository?.createUserProfile(
+                FirestoreUserProfile(
+                    id = firebaseUser.uid,
+                    userId = firebaseUser.uid,
+                    email = email,
+                    displayName = displayName,
+                    role = "PARENT"
+                )
+            )
+
+            _currentUser.value = email
+            _currentRole.value = UserRole.PARENT
+            _currentUserName.value = displayName
+            startFirestoreRealtimeSync(firebaseUser.uid, UserRole.PARENT)
+            recordSignInAttempt(email, success = true)
+            onComplete(true, if (isSignUpMode) "Parent account created with Google!" else "Signed in with Google!")
+        }
+    }
+
+    // Sign up logic: restricts self-registration to Parent role and enforces salted hashing
     fun signUp(name: String, email: String, role: UserRole, provider: String, passwordRaw: String = "", onComplete: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             try {
                 val trimmedEmail = email.trim().lowercase()
+                val trimmedName = name.trim()
+
+                if (role != UserRole.PARENT) {
+                    onComplete(false, "Driver and School Administrator accounts are provisioned by your school administrator.")
+                    return@launch
+                }
+
+                if (trimmedName.isBlank() || !trimmedEmail.contains("@")) {
+                    onComplete(false, "Please enter a valid full name and email address.")
+                    return@launch
+                }
+
+                if (provider != "google" && passwordRaw.length < 8) {
+                    onComplete(false, "Password must be at least 8 characters.")
+                    return@launch
+                }
 
                 val limitCheck = checkSignUpRateLimit(trimmedEmail)
                 if (!limitCheck.first) {
@@ -1108,46 +1205,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                var firebaseSuccess = false
-                if (firebaseAuth != null && provider == "email") {
-                    try {
-                        firebaseAuth!!.createUserWithEmailAndPassword(trimmedEmail, passwordRaw).await()
-                        firebaseSuccess = true
-                    } catch (e: Exception) {
-                        val msg = e.message ?: ""
-                        if (msg.contains("no firebase app", ignoreCase = true) ||
-                            msg.contains("not initialized", ignoreCase = true) ||
-                            e is IllegalStateException) {
-                            firebaseSuccess = false
-                        } else {
-                            onComplete(false, "Firebase Registration: ${e.localizedMessage ?: e.message}")
-                            return@launch
-                        }
-                    }
-                }
-
-                val stringRole = when (role) {
-                    UserRole.PARENT -> "PARENT"
-                    UserRole.DRIVER -> "DRIVER"
-                    UserRole.ADMIN -> "ADMIN"
-                }
-
                 val newUser = UserEntity(
                     email = trimmedEmail,
-                    name = name.trim(),
-                    role = stringRole,
-                    provider = if (firebaseSuccess) "firebase_email" else provider,
-                    passwordHash = if (provider == "google") "" else hashPassword(passwordRaw)
+                    name = trimmedName,
+                    role = "PARENT",
+                    provider = provider,
+                    passwordHash = if (provider == "google") "" else hashPasswordSalted(passwordRaw)
                 )
                 userDao?.insertUser(newUser)
-                
-                // Automatically log in newly registered user
+
                 _currentUser.value = trimmedEmail
-                _currentRole.value = role
-                _currentUserName.value = name.trim()
-                
-                val successMsg = if (firebaseSuccess) "Registration successful with Firebase!" else "Registration successful!"
-                onComplete(true, successMsg)
+                _currentRole.value = UserRole.PARENT
+                _currentUserName.value = trimmedName
+
+                onComplete(true, "Registration successful!")
             } catch (e: Exception) {
                 onComplete(false, "Sign up error: ${e.message}")
             }
@@ -1155,82 +1226,189 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun signOut() {
-        try {
-            firebaseAuth?.signOut()
-        } catch (e: Exception) {
-            e.printStackTrace()
+        viewModelScope.launch {
+            stopDriverGpsTracking()
+            stopFirestoreRealtimeSync()
+            GoogleAuthHelper.clearAndSignOut(getApplication())
+            _currentUser.value = null
+            _currentRole.value = null
+            _currentUserName.value = "User"
+            resetData()
         }
-        _currentUser.value = null
-        _currentRole.value = null
-        _currentUserName.value = "User"
-        resetData()
     }
 
-    // --- LIVE SIMULATION TIMER (Runs every 2.5 seconds) ---
+    fun clearLocationErrorNotice() {
+        _locationErrorNotice.value = null
+    }
+
+    fun startDriverGpsTracking() {
+        val context = getApplication<Application>()
+        if (!DriverLocationTracker.hasLocationPermission(context)) {
+            _isLiveGpsTrackingActive.value = false
+            _telemetrySourceLabel.value = "SCHEDULE ESTIMATE"
+            _locationErrorNotice.value = "Location permission required to stream live GPS telemetry."
+            return
+        }
+        _locationErrorNotice.value = null
+        gpsTrackingJob?.cancel()
+        _isLiveGpsTrackingActive.value = true
+        _telemetrySourceLabel.value = "LIVE DEVICE GPS"
+        gpsTrackingJob = DriverLocationTracker.locationUpdates(context)
+            .onEach { loc ->
+                updateLiveDriverLocation(loc.latitude, loc.longitude, loc.speed)
+            }
+            .catch { err ->
+                if (err is CancellationException) throw err
+                _isLiveGpsTrackingActive.value = false
+                _telemetrySourceLabel.value = "SCHEDULE ESTIMATE"
+                _locationErrorNotice.value = err.message ?: "Unable to read GPS location."
+            }
+            .launchIn(viewModelScope)
+    }
+
+    fun stopDriverGpsTracking() {
+        gpsTrackingJob?.cancel()
+        gpsTrackingJob = null
+        _isLiveGpsTrackingActive.value = false
+        _telemetrySourceLabel.value = "SCHEDULE ESTIMATE"
+        _driverSpeedKmh.value = 0
+    }
+
+    fun updateLiveDriverLocation(lat: Double, lng: Double, speedMetersPerSec: Float) {
+        _driverGpsLat.value = lat
+        _driverGpsLng.value = lng
+        val speedKmh = (speedMetersPerSec * 3.6f).toInt().coerceAtLeast(0)
+        _driverSpeedKmh.value = speedKmh
+
+        val routeProgress = DriverLocationTracker.computeRouteProgress(lat, lng)
+        val remaining = 1f - routeProgress
+        _progress.value = routeProgress
+        _progressPct.value = (routeProgress * 100).toInt()
+        _distanceKm.value = DriverLocationTracker.estimateRemainingDistanceKm(routeProgress)
+        _etaMinutes.value = (15 * remaining).toInt().coerceAtLeast(1)
+        _stopsLeft.value = when {
+            routeProgress < 0.25f -> 3
+            routeProgress < 0.55f -> 2
+            routeProgress < 0.85f -> 1
+            else -> 0
+        }
+
+        _routeStops.value = _routeStops.value.mapIndexed { idx, stop ->
+            val isComp = when (idx) {
+                0 -> routeProgress > 0.15f
+                1 -> routeProgress > 0.45f
+                2 -> routeProgress > 0.75f
+                3 -> routeProgress > 0.95f
+                else -> false
+            }
+            val isCurr = when (idx) {
+                0 -> routeProgress <= 0.15f
+                1 -> routeProgress > 0.15f && routeProgress <= 0.45f
+                2 -> routeProgress > 0.45f && routeProgress <= 0.75f
+                3 -> routeProgress > 0.75f
+                else -> false
+            }
+            stop.copy(
+                isCompleted = isComp,
+                isCurrent = isCurr,
+                isPending = !isComp && !isCurr
+            )
+        }
+
+        _adminFleetBuses.value = _adminFleetBuses.value.mapIndexed { idx, bus ->
+            if (idx == 0) {
+                bus.copy(latOffset = routeProgress, speed = speedKmh)
+            } else bus
+        }
+
+        val now = System.currentTimeMillis()
+        val fbUid = firebaseAuth?.currentUser?.uid
+        val repo = firestoreRepository
+        val role = _currentRole.value
+        if (fbUid != null && repo != null &&
+            (role == UserRole.DRIVER || role == UserRole.ADMIN) &&
+            now - lastTelemetrySyncMs >= 10_000L
+        ) {
+            lastTelemetrySyncMs = now
+            val primaryBus = _adminFleetBuses.value.firstOrNull { it.plate == "KDE 732X" }
+            val busId = primaryBus?.id ?: "bus_kde_732x"
+            val occupancy = (12 + _boardedCount.value).toLong()
+            viewModelScope.launch {
+                repo.updateBusTelemetryByDriver(
+                    busId = busId,
+                    lat = lat,
+                    lng = lng,
+                    speed = speedKmh.toLong(),
+                    occupancyCount = occupancy,
+                    status = primaryBus?.status ?: "On Time"
+                )
+            }
+        }
+    }
+
+    // --- LIVE SIMULATION TIMER (Runs every 2.5 seconds when live GPS is off) ---
     private fun startSimulation() {
         simulationJob?.cancel()
         simulationJob = viewModelScope.launch {
             while (true) {
                 delay(2500)
 
-                // 1. Advance Route progress for parent view
-                var nextProgress = _progress.value + 0.04f
-                if (nextProgress > 1f) {
-                    nextProgress = 0f // Loop back
-                }
-                _progress.value = nextProgress
-
-                // Calculations
-                val remaining = 1f - nextProgress
-                val eta = (15 * remaining).toInt().coerceAtLeast(1)
-                _etaMinutes.value = eta
-                _distanceKm.value = kotlin.math.round(4.8f * remaining * 10f) / 10f
-
-                val countLeft = when {
-                    nextProgress < 0.25f -> 3
-                    nextProgress < 0.55f -> 2
-                    nextProgress < 0.85f -> 1
-                    else -> 0
-                }
-                _stopsLeft.value = countLeft
-                _progressPct.value = (nextProgress * 100).toInt()
-
-                // Update isCompleted status of stops based on progress
-                _routeStops.value = _routeStops.value.mapIndexed { idx, stop ->
-                    val isComp = when (idx) {
-                        0 -> nextProgress > 0.15f
-                        1 -> nextProgress > 0.45f
-                        2 -> nextProgress > 0.75f
-                        3 -> nextProgress > 0.95f
-                        else -> false
+                if (!_isLiveGpsTrackingActive.value) {
+                    // 1. Advance Route progress for schedule estimate preview
+                    var nextProgress = _progress.value + 0.04f
+                    if (nextProgress > 1f) {
+                        nextProgress = 0f // Loop back
                     }
-                    val isCurr = when (idx) {
-                        0 -> nextProgress <= 0.15f
-                        1 -> nextProgress > 0.15f && nextProgress <= 0.45f
-                        2 -> nextProgress > 0.45f && nextProgress <= 0.75f
-                        3 -> nextProgress > 0.75f
-                        else -> false
+                    _progress.value = nextProgress
+
+                    val remaining = 1f - nextProgress
+                    val eta = (15 * remaining).toInt().coerceAtLeast(1)
+                    _etaMinutes.value = eta
+                    _distanceKm.value = kotlin.math.round(4.8f * remaining * 10f) / 10f
+
+                    val countLeft = when {
+                        nextProgress < 0.25f -> 3
+                        nextProgress < 0.55f -> 2
+                        nextProgress < 0.85f -> 1
+                        else -> 0
                     }
-                    stop.copy(
-                        isCompleted = isComp,
-                        isCurrent = isCurr,
-                        isPending = !isComp && !isCurr,
-                        liveEtaMin = (stop.liveEtaMin - 1).coerceAtLeast(0)
-                    )
+                    _stopsLeft.value = countLeft
+                    _progressPct.value = (nextProgress * 100).toInt()
+
+                    _routeStops.value = _routeStops.value.mapIndexed { idx, stop ->
+                        val isComp = when (idx) {
+                            0 -> nextProgress > 0.15f
+                            1 -> nextProgress > 0.45f
+                            2 -> nextProgress > 0.75f
+                            3 -> nextProgress > 0.95f
+                            else -> false
+                        }
+                        val isCurr = when (idx) {
+                            0 -> nextProgress <= 0.15f
+                            1 -> nextProgress > 0.15f && nextProgress <= 0.45f
+                            2 -> nextProgress > 0.45f && nextProgress <= 0.75f
+                            3 -> nextProgress > 0.75f
+                            else -> false
+                        }
+                        stop.copy(
+                            isCompleted = isComp,
+                            isCurrent = isCurr,
+                            isPending = !isComp && !isCurr,
+                            liveEtaMin = (stop.liveEtaMin - 1).coerceAtLeast(0)
+                        )
+                    }
                 }
 
                 // 2. Increment Admin buses simulated movement using sine/cosine phase shift
                 adminDriftTicks += 0.05f
                 _adminFleetBuses.value = _adminFleetBuses.value.mapIndexed { idx, bus ->
-                    if (bus.plate == "KDE 991Z") bus // Keep inactive
+                    if (bus.plate == "KDE 991Z" || (idx == 0 && _isLiveGpsTrackingActive.value)) bus
                     else {
-                        // Create slightly offset speeds and frequencies for map realism
                         val speedPhase = adminDriftTicks * (1f + (idx * 0.15f))
                         val progressOffset = (0.2f * idx + (sin(speedPhase) * 0.15f + 0.5f)).coerceIn(0f, 1f).toFloat()
 
-                        // Calculate student count dynamically mirroring simulated boarding
                         val newCount = if (idx == 0) {
-                            12 + _boardedCount.value // Match the driver boarding screen!
+                            12 + _boardedCount.value
                         } else {
                             bus.studentCount
                         }
@@ -1331,6 +1509,50 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             studentName = targetStudentName,
             content = "Student Update: $targetStudentName $actionText."
         )
+
+        if (newStatus == StudentStatus.BOARDED && toggleChildBoarded.value) {
+            SafiriNotificationManager.sendNotification(
+                context = getApplication(),
+                channelId = SafiriNotificationManager.CHANNEL_BOARDING,
+                notificationId = 1002 + (studentId.hashCode() and 0xFF),
+                title = "Safiri Boarding Update",
+                body = "$targetStudentName boarded Bus $targetBusPlate at $currentTimeStr."
+            )
+        } else if (newStatus == StudentStatus.DROPPED_OFF && toggleTripCompleted.value) {
+            SafiriNotificationManager.sendNotification(
+                context = getApplication(),
+                channelId = SafiriNotificationManager.CHANNEL_BOARDING,
+                notificationId = 1002 + (studentId.hashCode() and 0xFF),
+                title = "Safiri Safe Arrival",
+                body = "$targetStudentName safely arrived at school."
+            )
+        }
+
+        val fbUid = firebaseAuth?.currentUser?.uid
+        val repo = firestoreRepository
+        if (fbUid != null && repo != null) {
+            viewModelScope.launch {
+                val role = _currentRole.value ?: UserRole.PARENT
+                when (role) {
+                    UserRole.DRIVER, UserRole.ADMIN -> {
+                        repo.updateStudentStatusByDriver(
+                            studentId = studentId,
+                            status = newStatus.name,
+                            boardedTime = if (newStatus == StudentStatus.BOARDED) currentTimeStr else null
+                        )
+                    }
+                    UserRole.PARENT -> {
+                        if (newStatus == StudentStatus.ABSENT || newStatus == StudentStatus.NOT_BOARDED) {
+                            repo.updateStudentByParent(
+                                studentId = studentId,
+                                status = newStatus.name,
+                                absentReason = reason
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fun registerParentWithChild(
@@ -1355,7 +1577,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             recordSignUpAttempt(trimmedEmail)
 
-            val hashedPassword = hashPassword(parentPassword)
+            val hashedPassword = hashPasswordSalted(parentPassword)
             val userEntity = UserEntity(
                 email = trimmedEmail,
                 name = parentFullName.trim(),
@@ -1464,29 +1686,62 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         content: String
     ) {
         if (content.isBlank()) return
+        if (senderRole != "SYSTEM") {
+            val userKey = _currentUser.value ?: senderName
+            val decision = rateLimiter.tryConsumeMessage(userKey, content)
+            if (!decision.allowed) {
+                _rateLimitNotice.value = decision.message
+                return
+            }
+        }
+        addInterportalMessageInternal(senderName, senderRole, recipientRole, targetBusPlate, studentName, content)
+    }
+
+    private fun addInterportalMessageInternal(
+        senderName: String,
+        senderRole: String,
+        recipientRole: String,
+        targetBusPlate: String,
+        studentName: String? = null,
+        content: String
+    ) {
+        val messageId = "msg_${System.currentTimeMillis()}"
         val newMsg = InterportalMessage(
-            id = "msg_${System.currentTimeMillis()}",
+            id = messageId,
             senderName = senderName,
             senderRole = senderRole,
             recipientRole = recipientRole,
             targetBusPlate = targetBusPlate,
             studentName = studentName,
-            content = content,
+            content = content.trim(),
             timestamp = "Just Now"
         )
         _interportalMessages.value = listOf(newMsg) + _interportalMessages.value
+        persistMessageToFirestore(newMsg)
     }
 
     fun triggerSOS(driverName: String = "Erick Mwangi", busPlate: String = "KDE 732X") {
+        val decision = rateLimiter.tryConsumeSos(busPlate)
+        if (!decision.allowed) {
+            _rateLimitNotice.value = decision.message
+            return
+        }
         _sosActive.value = true
         val alertDetail = "CRITICAL EMERGENCY: Driver $driverName on Bus $busPlate triggered SOS assistance button!"
-        postAlert("EMERGENCY SOS TRIGGERED", alertDetail, AlertSeverity.DANGER)
-        sendInterportalMessage(
+        addAlertInternal("EMERGENCY SOS TRIGGERED", alertDetail, AlertSeverity.DANGER)
+        addInterportalMessageInternal(
             senderName = driverName,
             senderRole = "DRIVER",
             recipientRole = "ADMIN",
             targetBusPlate = busPlate,
             content = alertDetail
+        )
+        SafiriNotificationManager.sendNotification(
+            context = getApplication(),
+            channelId = SafiriNotificationManager.CHANNEL_EMERGENCY,
+            notificationId = 1001,
+            title = "EMERGENCY SOS • $busPlate",
+            body = alertDetail
         )
     }
 
@@ -1619,20 +1874,65 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- ADMIN ALERTS ---
     fun postAlert(title: String, detail: String, severity: AlertSeverity) {
-        if (title.isEmpty() || detail.isEmpty()) return
+        if (title.isBlank() || detail.isBlank()) return
+        val userKey = _currentUser.value ?: "admin"
+        val decision = rateLimiter.tryConsumeAlert(userKey)
+        if (!decision.allowed) {
+            _rateLimitNotice.value = decision.message
+            return
+        }
+        addAlertInternal(title, detail, severity)
+        if (severity == AlertSeverity.DANGER) {
+            SafiriNotificationManager.sendNotification(
+                context = getApplication(),
+                channelId = SafiriNotificationManager.CHANNEL_EMERGENCY,
+                notificationId = 1003,
+                title = title.trim(),
+                body = detail.trim()
+            )
+        }
+    }
+
+    private fun addAlertInternal(title: String, detail: String, severity: AlertSeverity) {
+        val alertId = "alert_${System.currentTimeMillis()}"
         val newAlert = BusAlert(
-            id = (System.currentTimeMillis()).toString(),
-            title = title,
-            detail = detail,
+            id = alertId,
+            title = title.trim(),
+            detail = detail.trim(),
             timestamp = "Just Now • Active",
             severity = severity,
             status = "Ongoing"
         )
         _activeAlerts.value = listOf(newAlert) + _activeAlerts.value
+
+        val fbUid = firebaseAuth?.currentUser?.uid
+        val repo = firestoreRepository
+        if (fbUid != null && repo != null && (_currentRole.value == UserRole.DRIVER || _currentRole.value == UserRole.ADMIN)) {
+            viewModelScope.launch {
+                repo.createAlert(
+                    alertId = alertId,
+                    alert = FirestoreBusAlert(
+                        id = alertId,
+                        authorUid = fbUid,
+                        title = newAlert.title,
+                        detail = newAlert.detail,
+                        severity = newAlert.severity.name,
+                        status = "Ongoing"
+                    )
+                )
+            }
+        }
     }
 
     fun dismissAlert(alertId: String) {
         _activeAlerts.value = _activeAlerts.value.filter { it.id != alertId }
+        val fbUid = firebaseAuth?.currentUser?.uid
+        val repo = firestoreRepository
+        if (fbUid != null && repo != null && _currentRole.value == UserRole.ADMIN) {
+            viewModelScope.launch {
+                repo.resolveAlert(alertId)
+            }
+        }
     }
 
     // --- GLOBAL TRANSIT APPS INTEGRATION CONTROLLERS ---
@@ -1645,26 +1945,63 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun upvoteIncident(id: String) {
+        var delta = 1L
         _communityIncidents.value = _communityIncidents.value.map {
             if (it.id == id) {
-                val nextVotes = if (it.isUpvoted) it.votes - 1 else it.votes + 1
+                delta = if (it.isUpvoted) -1L else 1L
+                val nextVotes = (it.votes + delta.toInt()).coerceAtLeast(0)
                 it.copy(votes = nextVotes, isUpvoted = !it.isUpvoted)
             } else it
+        }
+        val fbUid = firebaseAuth?.currentUser?.uid
+        val repo = firestoreRepository
+        if (fbUid != null && repo != null) {
+            viewModelScope.launch {
+                repo.incrementIncidentVotes(id, delta)
+            }
         }
     }
 
     fun postCommunityIncident(title: String, location: String, category: String) {
         if (title.isBlank()) return
+        val userKey = _currentUser.value ?: "user"
+        val decision = rateLimiter.tryConsumeIncident(userKey, title)
+        if (!decision.allowed) {
+            _rateLimitNotice.value = decision.message
+            return
+        }
+        val incId = "inc_${System.currentTimeMillis()}"
+        val resolvedLocation = location.ifBlank { "Nairobi Metro" }
+        val resolvedCategory = if (category in listOf("Traffic", "Weather", "Roadwork", "Other")) category else "Other"
         val newInc = IncidentReport(
-            id = System.currentTimeMillis().toString(),
-            title = title,
-            location = location.ifBlank { "Nairobi Metro" },
+            id = incId,
+            title = title.trim(),
+            location = resolvedLocation,
             reportedTime = "Just now",
             votes = 1,
-            category = category,
+            category = resolvedCategory,
             isUpvoted = true
         )
         _communityIncidents.value = listOf(newInc) + _communityIncidents.value
+
+        val fbUid = firebaseAuth?.currentUser?.uid
+        val repo = firestoreRepository
+        if (fbUid != null && repo != null) {
+            viewModelScope.launch {
+                repo.createIncident(
+                    incidentId = incId,
+                    incident = FirestoreCommunityIncident(
+                        id = incId,
+                        reporterUid = fbUid,
+                        title = newInc.title,
+                        location = resolvedLocation,
+                        category = resolvedCategory,
+                        votes = 1L,
+                        isActive = true
+                    )
+                )
+            }
+        }
     }
 
     fun shareLiveTripLink() {
@@ -1679,44 +2016,204 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _selectedTransitAppFilter.value = filter
     }
 
+    private fun startFirestoreRealtimeSync(uid: String, role: UserRole) {
+        val syncKey = "$uid:${role.name}"
+        if (activeFirestoreSyncKey == syncKey && firestoreSyncJobs.isNotEmpty()) return
+        stopFirestoreRealtimeSync()
+
+        val repo = firestoreRepository ?: return
+        if (firebaseAuth?.currentUser == null) return
+        activeFirestoreSyncKey = syncKey
+
+        val studentsFlow = if (role == UserRole.PARENT) {
+            repo.observeStudentsForParent(uid)
+        } else {
+            repo.observeAllStudents()
+        }
+
+        firestoreSyncJobs += studentsFlow
+            .onEach { remoteList ->
+                if (remoteList.isNotEmpty()) {
+                    val mappedRemote = remoteList.map { fs ->
+                        Student(
+                            id = fs.id,
+                            name = fs.name,
+                            initials = fs.initials.ifBlank { "ST" },
+                            avatarColor = DefaultAccentBlue,
+                            parentName = fs.parentName,
+                            parentEmail = fs.parentEmail,
+                            parentPhone = fs.parentPhone,
+                            assignedBusPlate = fs.assignedBusPlate,
+                            assignedDriverName = fs.assignedDriverName,
+                            pickupStop = fs.pickupStop,
+                            dropoffStop = fs.dropoffStop,
+                            status = runCatching { StudentStatus.valueOf(fs.status) }.getOrDefault(StudentStatus.NOT_BOARDED),
+                            boardedTime = fs.boardedTime,
+                            absentReason = fs.absentReason,
+                            parentNote = fs.parentNote,
+                            classGrade = fs.classGrade ?: "Grade 3",
+                            schoolName = fs.schoolName ?: "St. Mary's Academy"
+                        )
+                    }
+                    val remoteIds = mappedRemote.map { it.id }.toSet()
+                    _students.value = mappedRemote + _students.value.filterNot { it.id in remoteIds }
+                    _boardedCount.value = _students.value.count { it.status == StudentStatus.BOARDED }
+                }
+            }
+            .catch { error ->
+                val fsEx = error.unwrapFirestoreException()
+                if (fsEx == null && error is CancellationException) throw error
+                handleFirestoreError(fsEx ?: error, OperationType.LIST, SafiriFirestoreRepository.COLLECTION_STUDENTS)
+            }
+            .launchIn(viewModelScope)
+
+        val messagesFlow = if (role == UserRole.PARENT) {
+            repo.observeMessagesForSender(uid)
+        } else {
+            repo.observeAllMessagesForStaff()
+        }
+
+        firestoreSyncJobs += messagesFlow
+            .onEach { remoteMsgs ->
+                if (remoteMsgs.isNotEmpty()) {
+                    val mapped = remoteMsgs.map { m ->
+                        InterportalMessage(
+                            id = m.id,
+                            senderName = m.senderName,
+                            senderRole = m.senderRole,
+                            recipientRole = m.recipientRole,
+                            targetBusPlate = m.targetBusPlate,
+                            studentName = m.studentName,
+                            content = m.content,
+                            timestamp = m.displayTime ?: "Just Now"
+                        )
+                    }
+                    val remoteIds = mapped.map { it.id }.toSet()
+                    _interportalMessages.value = mapped + _interportalMessages.value.filterNot { it.id in remoteIds }
+                }
+            }
+            .catch { error ->
+                val fsEx = error.unwrapFirestoreException()
+                if (fsEx == null && error is CancellationException) throw error
+                handleFirestoreError(fsEx ?: error, OperationType.LIST, SafiriFirestoreRepository.COLLECTION_MESSAGES)
+            }
+            .launchIn(viewModelScope)
+
+        firestoreSyncJobs += repo.observeActiveAlerts()
+            .onEach { remoteAlerts ->
+                if (remoteAlerts.isNotEmpty()) {
+                    val mapped = remoteAlerts.map { a ->
+                        BusAlert(
+                            id = a.id,
+                            title = a.title,
+                            detail = a.detail,
+                            timestamp = "${a.status} • Live",
+                            severity = runCatching { AlertSeverity.valueOf(a.severity) }.getOrDefault(AlertSeverity.INFO),
+                            status = a.status
+                        )
+                    }
+                    val remoteIds = mapped.map { it.id }.toSet()
+                    _activeAlerts.value = mapped + _activeAlerts.value.filterNot { it.id in remoteIds }
+                }
+            }
+            .catch { error ->
+                val fsEx = error.unwrapFirestoreException()
+                if (fsEx == null && error is CancellationException) throw error
+                handleFirestoreError(fsEx ?: error, OperationType.LIST, SafiriFirestoreRepository.COLLECTION_ALERTS)
+            }
+            .launchIn(viewModelScope)
+
+        firestoreSyncJobs += repo.observeActiveIncidents()
+            .onEach { remoteIncidents ->
+                if (remoteIncidents.isNotEmpty()) {
+                    val mapped = remoteIncidents.map { inc ->
+                        IncidentReport(
+                            id = inc.id,
+                            title = inc.title,
+                            location = inc.location,
+                            reportedTime = "Live",
+                            votes = inc.votes.toInt(),
+                            category = inc.category
+                        )
+                    }
+                    val remoteIds = mapped.map { it.id }.toSet()
+                    _communityIncidents.value = mapped + _communityIncidents.value.filterNot { it.id in remoteIds }
+                }
+            }
+            .catch { error ->
+                val fsEx = error.unwrapFirestoreException()
+                if (fsEx == null && error is CancellationException) throw error
+                handleFirestoreError(fsEx ?: error, OperationType.LIST, SafiriFirestoreRepository.COLLECTION_INCIDENTS)
+            }
+            .launchIn(viewModelScope)
+
+        firestoreSyncJobs += repo.observeActiveFleetBuses()
+            .onEach { remoteBuses ->
+                if (remoteBuses.isNotEmpty()) {
+                    val mappedByPlate = remoteBuses.associateBy { it.plate }
+                    _adminFleetBuses.value = _adminFleetBuses.value.map { bus ->
+                        val remote = mappedByPlate[bus.plate]
+                        if (remote != null) {
+                            bus.copy(
+                                driverName = remote.driverName,
+                                studentCount = remote.studentCount.toInt(),
+                                occupancyCount = remote.occupancyCount.toInt(),
+                                capacity = remote.capacity.toInt(),
+                                status = remote.status,
+                                speed = remote.speed.toInt()
+                            )
+                        } else bus
+                    }
+                }
+            }
+            .catch { error ->
+                val fsEx = error.unwrapFirestoreException()
+                if (fsEx == null && error is CancellationException) throw error
+                handleFirestoreError(fsEx ?: error, OperationType.LIST, SafiriFirestoreRepository.COLLECTION_FLEET_BUSES)
+            }
+            .launchIn(viewModelScope)
+    }
+
+    private fun stopFirestoreRealtimeSync() {
+        firestoreSyncJobs.forEach { it.cancel() }
+        firestoreSyncJobs.clear()
+        activeFirestoreSyncKey = null
+    }
+
     private fun setupFirebaseAuthListener() {
         try {
-            firebaseAuth?.addAuthStateListener { auth ->
+            val listener = FirebaseAuth.AuthStateListener { auth ->
                 val fbUser = auth.currentUser
                 if (fbUser != null) {
-                    val email = fbUser.email
-                    if (email != null && _currentUser.value != email) {
+                    val email = fbUser.email?.trim()?.lowercase()
+                    if (email != null) {
                         viewModelScope.launch {
-                            val user = userDao?.getUserByEmail(email)
-                            if (user != null) {
-                                val userRole = when (user.role) {
+                            val remoteProfile = firestoreRepository?.getUserProfile(fbUser.uid)?.getOrNull()
+                            val localUser = userDao?.getUserByEmail(email)
+                            val roleStr = remoteProfile?.role ?: localUser?.role
+                            if (roleStr != null) {
+                                val userRole = when (roleStr) {
                                     "PARENT" -> UserRole.PARENT
                                     "DRIVER" -> UserRole.DRIVER
                                     "ADMIN" -> UserRole.ADMIN
                                     else -> UserRole.PARENT
                                 }
-                                _currentUser.value = user.email
-                                _currentRole.value = userRole
-                                _currentUserName.value = user.name
-                            } else {
-                                // Fallback for newly authenticated Firebase users not yet in Room
-                                val defaultName = email.substringBefore("@").replaceFirstChar { it.uppercase() }
-                                val newUser = UserEntity(email, defaultName, "PARENT", "firebase_email", "")
-                                userDao?.insertUser(newUser)
-                                _currentUser.value = email
-                                _currentRole.value = UserRole.PARENT
-                                _currentUserName.value = defaultName
+                                if (_currentUser.value == null) {
+                                    _currentUser.value = email
+                                    _currentRole.value = userRole
+                                    _currentUserName.value = remoteProfile?.displayName ?: localUser?.name ?: "User"
+                                }
+                                startFirestoreRealtimeSync(fbUser.uid, userRole)
                             }
                         }
                     }
                 } else {
-                    // Firebase session is null.
-                    // If the current local session was authenticated via Firebase, clear it.
+                    stopFirestoreRealtimeSync()
                     if (_currentUser.value != null) {
                         viewModelScope.launch {
                             val email = _currentUser.value ?: ""
                             val user = userDao?.getUserByEmail(email)
-                            if (user != null && user.provider == "firebase_email") {
+                            if (user != null && user.provider == "google") {
                                 _currentUser.value = null
                                 _currentRole.value = null
                                 _currentUserName.value = "User"
@@ -1725,8 +2222,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }
+            firebaseAuthListener = listener
+            firebaseAuth?.addAuthStateListener(listener)
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w("AppViewModel", "AuthStateListener setup failed: ${e.message}")
         }
     }
 
@@ -1734,6 +2233,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val showAiAssistantDialog: StateFlow<Boolean> = _showAiAssistantDialog.asStateFlow()
 
     fun openAiAssistantDialog() {
+        refreshAiQuota()
         _showAiAssistantDialog.value = true
     }
 
@@ -1741,15 +2241,37 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _showAiAssistantDialog.value = false
     }
 
-    // --- GEMINI AI INTEGRATION METHODS ---
+    // --- GEMINI AI INTEGRATION METHODS (Rate-limited & Quota-guarded) ---
+
+    private fun executeRateLimitedAiQuery(
+        prompt: String,
+        isHighThinking: Boolean = false,
+        onResult: (String) -> Unit,
+        block: suspend () -> String
+    ) {
+        val userKey = _currentUser.value ?: "guest"
+        val decision = rateLimiter.tryConsumeAiQuery(
+            userKey = userKey,
+            prompt = prompt,
+            isHighThinking = isHighThinking
+        )
+        decision.remainingQuota?.let { _aiRemainingDailyQuota.value = it }
+        if (!decision.allowed) {
+            onResult(decision.message)
+            return
+        }
+        viewModelScope.launch {
+            val response = block()
+            onResult(response)
+        }
+    }
 
     /**
      * Low-Latency fast response query (gemini-3.1-flash-lite-preview)
      */
     fun runFastAiQuery(prompt: String, onResult: (String) -> Unit) {
-        viewModelScope.launch {
-            val response = GeminiRepository.generateFastResponse(prompt)
-            onResult(response)
+        executeRateLimitedAiQuery(prompt, isHighThinking = false, onResult = onResult) {
+            GeminiRepository.generateFastResponse(prompt)
         }
     }
 
@@ -1757,9 +2279,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * Google Maps Grounding query (gemini-3.5-flash with googleMaps tool)
      */
     fun runMapsGroundedQuery(prompt: String, location: String = "Nairobi, Kenya", onResult: (String) -> Unit) {
-        viewModelScope.launch {
-            val response = GeminiRepository.generateMapsGroundedResponse(prompt, location)
-            onResult(response)
+        executeRateLimitedAiQuery(prompt, isHighThinking = false, onResult = onResult) {
+            GeminiRepository.generateMapsGroundedResponse(prompt, location)
         }
     }
 
@@ -1767,9 +2288,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * High Thinking Mode query (gemini-3.1-pro-preview with thinkingLevel = HIGH, no maxOutputTokens)
      */
     fun runHighThinkingQuery(prompt: String, onResult: (String) -> Unit) {
-        viewModelScope.launch {
-            val response = GeminiRepository.generateHighThinkingResponse(prompt)
-            onResult(response)
+        executeRateLimitedAiQuery(prompt, isHighThinking = true, onResult = onResult) {
+            GeminiRepository.generateHighThinkingResponse(prompt)
         }
     }
 
@@ -1777,9 +2297,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * General tasks query (gemini-3.5-flash)
      */
     fun runGeneralAiQuery(prompt: String, onResult: (String) -> Unit) {
-        viewModelScope.launch {
-            val response = GeminiRepository.generateGeneralResponse(prompt)
-            onResult(response)
+        executeRateLimitedAiQuery(prompt, isHighThinking = false, onResult = onResult) {
+            GeminiRepository.generateGeneralResponse(prompt)
         }
     }
 
@@ -1787,55 +2306,75 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * Complex analysis query (gemini-3.1-pro-preview)
      */
     fun runComplexAnalysis(prompt: String, onResult: (String) -> Unit) {
-        viewModelScope.launch {
-            val response = GeminiRepository.generateComplexAnalysis(prompt)
-            onResult(response)
+        executeRateLimitedAiQuery(prompt, isHighThinking = true, onResult = onResult) {
+            GeminiRepository.generateComplexAnalysis(prompt)
         }
     }
 
     // --- FIRESTORE PERSISTENCE METHODS ---
 
     fun persistStudentToFirestore(student: Student) {
-        try {
-            firestore?.collection("students")
-                ?.document(student.id)
-                ?.set(mapOf(
-                    "id" to student.id,
-                    "name" to student.name,
-                    "parentName" to student.parentName,
-                    "parentEmail" to student.parentEmail,
-                    "parentPhone" to student.parentPhone,
-                    "status" to student.status.name,
-                    "assignedBusPlate" to student.assignedBusPlate,
-                    "pickupStop" to student.pickupStop,
-                    "dropoffStop" to student.dropoffStop,
-                    "updatedAt" to System.currentTimeMillis()
-                ))
-        } catch (e: Exception) {
-            e.printStackTrace()
+        val fbUid = firebaseAuth?.currentUser?.uid ?: return
+        val repo = firestoreRepository ?: return
+        viewModelScope.launch {
+            repo.createStudent(
+                studentId = student.id,
+                student = FirestoreStudent(
+                    id = student.id,
+                    parentUid = fbUid,
+                    name = student.name,
+                    initials = student.initials,
+                    parentName = student.parentName,
+                    parentEmail = student.parentEmail,
+                    parentPhone = student.parentPhone,
+                    assignedBusPlate = student.assignedBusPlate,
+                    assignedDriverName = student.assignedDriverName,
+                    pickupStop = student.pickupStop,
+                    dropoffStop = student.dropoffStop,
+                    status = student.status.name,
+                    classGrade = student.classGrade,
+                    schoolName = student.schoolName,
+                    boardedTime = student.boardedTime,
+                    absentReason = student.absentReason,
+                    parentNote = student.parentNote
+                )
+            )
         }
     }
 
     fun persistMessageToFirestore(message: InterportalMessage) {
-        try {
-            firestore?.collection("interportal_messages")
-                ?.document(message.id)
-                ?.set(mapOf(
-                    "id" to message.id,
-                    "senderName" to message.senderName,
-                    "senderRole" to message.senderRole,
-                    "recipientRole" to message.recipientRole,
-                    "targetBusPlate" to message.targetBusPlate,
-                    "content" to message.content,
-                    "timestamp" to message.timestamp
-                ))
-        } catch (e: Exception) {
-            e.printStackTrace()
+        val fbUid = firebaseAuth?.currentUser?.uid ?: return
+        val repo = firestoreRepository ?: return
+        val effectiveSenderRole = when {
+            message.senderRole == "PARENT" -> "PARENT"
+            message.senderRole == "DRIVER" && _currentRole.value == UserRole.DRIVER -> "DRIVER"
+            message.senderRole == "ADMIN" && _currentRole.value == UserRole.ADMIN -> "ADMIN"
+            message.senderRole == "SYSTEM" && (_currentRole.value == UserRole.DRIVER || _currentRole.value == UserRole.ADMIN) -> "SYSTEM"
+            else -> "PARENT"
+        }
+        viewModelScope.launch {
+            repo.sendInterportalMessage(
+                messageId = message.id,
+                message = FirestoreInterportalMessage(
+                    id = message.id,
+                    senderUid = fbUid,
+                    senderName = message.senderName,
+                    senderRole = effectiveSenderRole,
+                    recipientRole = message.recipientRole,
+                    targetBusPlate = message.targetBusPlate,
+                    studentName = message.studentName,
+                    content = message.content,
+                    displayTime = message.timestamp
+                )
+            )
         }
     }
 
     override fun onCleared() {
         simulationJob?.cancel()
+        stopDriverGpsTracking()
+        stopFirestoreRealtimeSync()
+        firebaseAuthListener?.let { firebaseAuth?.removeAuthStateListener(it) }
         super.onCleared()
     }
 }

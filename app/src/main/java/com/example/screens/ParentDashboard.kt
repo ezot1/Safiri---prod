@@ -1,7 +1,11 @@
 package com.example.screens
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -36,6 +40,7 @@ import com.example.models.JourneyEvent
 import com.example.models.JourneyEventType
 import com.example.models.Student
 import com.example.models.StudentStatus
+import com.example.notifications.SafiriNotificationManager
 import com.example.ui.theme.*
 import com.example.viewmodel.AppViewModel
 import kotlinx.coroutines.delay
@@ -654,6 +659,18 @@ fun ParentMeTab(viewModel: AppViewModel) {
         Spacer(modifier = Modifier.height(24.dp))
 
         // Notification toggles card
+        var notificationsPermitted by remember {
+            mutableStateOf(SafiriNotificationManager.hasNotificationPermission(context))
+        }
+        val notificationPermissionLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission()
+        ) { granted ->
+            notificationsPermitted = granted
+            if (granted) {
+                SafiriNotificationManager.ensureChannels(context)
+            }
+        }
+
         SafiriCard(testTag = "notification_toggles_card") {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -670,13 +687,54 @@ fun ParentMeTab(viewModel: AppViewModel) {
             }
             Spacer(modifier = Modifier.height(12.dp))
 
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsPermitted) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(AmberAccent.copy(alpha = 0.14f))
+                        .border(1.dp, AmberAccent.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Device Alerts Disabled",
+                            color = TextPrimaryColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Allow notifications for boarding & SOS alerts",
+                            color = TextSecondaryColor,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("parent_enable_notifications_btn")
+                    ) {
+                        Text("Allow", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             ToggleRow(label = "Bus 10 min away", subLabel = "Ping when shuttle is approaching your block", checked = t1, onCheckedChange = { viewModel.toggleTenMin.value = it })
             HorizontalDivider(color = BorderColor)
             ToggleRow(label = "Child boarded", subLabel = "Instant notification when student logs onto bus", checked = t2, onCheckedChange = { viewModel.toggleChildBoarded.value = it })
             HorizontalDivider(color = BorderColor)
             ToggleRow(label = "Delay warnings", subLabel = "Alert if severe gridlock affects ETA by 5+ mins", checked = t3, onCheckedChange = { viewModel.toggleDelayWarning.value = it })
             HorizontalDivider(color = BorderColor)
-            ToggleRow(label = "Trip completed", subLabel = "SMS report when bus reaches safe destination", checked = t4, onCheckedChange = { viewModel.toggleTripCompleted.value = it })
+            ToggleRow(label = "Trip completed", subLabel = "Alert notification when bus reaches safe school destination", checked = t4, onCheckedChange = { viewModel.toggleTripCompleted.value = it })
         }
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -811,151 +869,6 @@ fun ParentMeTab(viewModel: AppViewModel) {
                 }
             }
         }
-
-        // API Key Configuration Card (Google Maps & Gemini AI)
-        val currentMapsApiKey by viewModel.mapsApiKey.collectAsState()
-        val currentGeminiApiKey by viewModel.geminiApiKey.collectAsState()
-        val apiKeySavedToast by viewModel.apiKeySavedToast.collectAsState()
-        var editMapsKey by remember(currentMapsApiKey) { mutableStateOf(currentMapsApiKey) }
-        var editGeminiKey by remember(currentGeminiApiKey) { mutableStateOf(currentGeminiApiKey) }
-        var isApiCardExpanded by remember { mutableStateOf(false) }
-
-        SafiriCard(testTag = "api_key_integration_card") {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { isApiCardExpanded = !isApiCardExpanded },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(Icons.Filled.Key, contentDescription = "API Keys", tint = AccentBlue)
-                    Column {
-                        Text(
-                            text = "API KEYS & MAPS INTEGRATION",
-                            color = TextTertiaryColor,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.5.sp
-                        )
-                        Text(
-                            text = if (currentMapsApiKey.isNotBlank()) "Google Maps: Connected" else "Google Maps: Ready to configure",
-                            color = if (currentMapsApiKey.isNotBlank()) GreenAccent else TextSecondaryColor,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-                Icon(
-                    imageVector = if (isApiCardExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                    contentDescription = "Expand API Settings",
-                    tint = TextSecondaryColor
-                )
-            }
-
-            if (isApiCardExpanded) {
-                Spacer(modifier = Modifier.height(14.dp))
-                Text(
-                    text = "Configure your Google Maps and Gemini AI keys to activate live turn-by-turn map tiles and intelligent transit queries.",
-                    color = TextSecondaryColor,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Google Maps API Key Input
-                Text(
-                    text = "Google Maps API Key",
-                    color = TextPrimaryColor,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                TextField(
-                    value = editMapsKey,
-                    onValueChange = { editMapsKey = it },
-                    placeholder = { Text("Enter Google Maps API Key (AIza...)", fontSize = 12.sp, color = TextTertiaryColor) },
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Surface3Color,
-                        unfocusedContainerColor = Surface3Color,
-                        focusedTextColor = TextPrimaryColor,
-                        unfocusedTextColor = TextPrimaryColor,
-                        focusedIndicatorColor = AccentBlue,
-                        unfocusedIndicatorColor = Color.Transparent
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .testTag("maps_api_key_input"),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Gemini API Key Input
-                Text(
-                    text = "Gemini AI API Key",
-                    color = TextPrimaryColor,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                TextField(
-                    value = editGeminiKey,
-                    onValueChange = { editGeminiKey = it },
-                    placeholder = { Text("Enter Gemini API Key (AIza...)", fontSize = 12.sp, color = TextTertiaryColor) },
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Surface3Color,
-                        unfocusedContainerColor = Surface3Color,
-                        focusedTextColor = TextPrimaryColor,
-                        unfocusedTextColor = TextPrimaryColor,
-                        focusedIndicatorColor = AccentBlue,
-                        unfocusedIndicatorColor = Color.Transparent
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .testTag("gemini_api_key_input"),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Button(
-                    onClick = {
-                        viewModel.updateMapsApiKey(editMapsKey)
-                        viewModel.updateGeminiApiKey(editGeminiKey)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
-                        .testTag("save_api_keys_button"),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Save & Apply to Maps", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
-
-                if (apiKeySavedToast != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = apiKeySavedToast ?: "",
-                        color = GreenAccent,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
 
         // Safiri App Identity & Brand Showcase Card
         SafiriCard(testTag = "app_brand_card") {

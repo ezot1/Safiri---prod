@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.BuildConfig
 import com.example.models.SubscriptionStatus
 import com.example.ui.theme.*
 import com.example.viewmodel.AppViewModel
@@ -183,52 +184,56 @@ fun AppSubscriptionInactiveScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            if (BuildConfig.DEBUG) {
+                Spacer(modifier = Modifier.height(12.dp))
 
-            // Simulation Quick Controls for Testing
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Surface2Color)
-                    .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
-                    .padding(12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "ADMIN TEST CONTROLS (QUICK SWITCH):",
-                    color = TextTertiaryColor,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Simulation Quick Controls for Debug Testing Only
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Surface2Color)
+                        .border(1.dp, BorderColor, RoundedCornerShape(12.dp))
+                        .padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Button(
-                        onClick = { viewModel.setSubscriptionStatus(SubscriptionStatus.ACTIVE) },
-                        colors = ButtonDefaults.buttonColors(containerColor = GreenAccent),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("inactive_reactivate_test_btn")
+                    Text(
+                        text = "ADMIN TEST CONTROLS (DEBUG ONLY):",
+                        color = TextTertiaryColor,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("Reactivate (Set Active)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = BackgroundColor)
-                    }
+                        Button(
+                            onClick = { viewModel.setSubscriptionStatus(SubscriptionStatus.ACTIVE) },
+                            colors = ButtonDefaults.buttonColors(containerColor = GreenAccent),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("inactive_reactivate_test_btn")
+                        ) {
+                            Text("Reactivate (Set Active)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = BackgroundColor)
+                        }
 
-                    OutlinedButton(
-                        onClick = { viewModel.signOut() },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = RedAccent),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("inactive_sign_out_btn")
-                    ) {
-                        Text("Admin Logout", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        OutlinedButton(
+                            onClick = { viewModel.signOut() },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = RedAccent),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("inactive_sign_out_btn")
+                        ) {
+                            Text("Admin Logout", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -398,72 +403,74 @@ fun AdminSubscriptionManagementCard(
             )
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        if (BuildConfig.DEBUG) {
+            Spacer(modifier = Modifier.height(14.dp))
 
-        // SIMULATION TESTER BUTTONS
-        Text(
-            text = "TEST SIMULATION (TOGGLE APP SUBSCRIPTION STATE):",
-            color = TextTertiaryColor,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp
-        )
+            // SIMULATION TESTER BUTTONS (Debug builds only)
+            Text(
+                text = "DEBUG SIMULATION (TOGGLE APP SUBSCRIPTION STATE):",
+                color = TextTertiaryColor,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
 
-        Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            OutlinedButton(
-                onClick = { viewModel.setSubscriptionStatus(SubscriptionStatus.ACTIVE) },
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = if (status == SubscriptionStatus.ACTIVE) GreenAccent.copy(alpha = 0.2f) else SurfaceColor,
-                    contentColor = if (status == SubscriptionStatus.ACTIVE) GreenAccent else TextSecondaryColor
-                ),
-                border = BorderStroke(1.dp, if (status == SubscriptionStatus.ACTIVE) GreenAccent else BorderColor),
-                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier
-                    .weight(1f)
-                    .height(34.dp)
-                    .testTag("set_status_active_btn")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text("Active", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
+                OutlinedButton(
+                    onClick = { viewModel.setSubscriptionStatus(SubscriptionStatus.ACTIVE) },
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = if (status == SubscriptionStatus.ACTIVE) GreenAccent.copy(alpha = 0.2f) else SurfaceColor,
+                        contentColor = if (status == SubscriptionStatus.ACTIVE) GreenAccent else TextSecondaryColor
+                    ),
+                    border = BorderStroke(1.dp, if (status == SubscriptionStatus.ACTIVE) GreenAccent else BorderColor),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(34.dp)
+                        .testTag("set_status_active_btn")
+                ) {
+                    Text("Active", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
 
-            OutlinedButton(
-                onClick = { viewModel.setSubscriptionStatus(SubscriptionStatus.PAYMENT_DUE) },
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = if (status == SubscriptionStatus.PAYMENT_DUE) AmberAccent.copy(alpha = 0.2f) else SurfaceColor,
-                    contentColor = if (status == SubscriptionStatus.PAYMENT_DUE) AmberAccent else TextSecondaryColor
-                ),
-                border = BorderStroke(1.dp, if (status == SubscriptionStatus.PAYMENT_DUE) AmberAccent else BorderColor),
-                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier
-                    .weight(1f)
-                    .height(34.dp)
-                    .testTag("set_status_due_btn")
-            ) {
-                Text("Due", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
+                OutlinedButton(
+                    onClick = { viewModel.setSubscriptionStatus(SubscriptionStatus.PAYMENT_DUE) },
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = if (status == SubscriptionStatus.PAYMENT_DUE) AmberAccent.copy(alpha = 0.2f) else SurfaceColor,
+                        contentColor = if (status == SubscriptionStatus.PAYMENT_DUE) AmberAccent else TextSecondaryColor
+                    ),
+                    border = BorderStroke(1.dp, if (status == SubscriptionStatus.PAYMENT_DUE) AmberAccent else BorderColor),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(34.dp)
+                        .testTag("set_status_due_btn")
+                ) {
+                    Text("Due", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
 
-            OutlinedButton(
-                onClick = { viewModel.setSubscriptionStatus(SubscriptionStatus.INACTIVE) },
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = if (status == SubscriptionStatus.INACTIVE) RedAccent.copy(alpha = 0.2f) else SurfaceColor,
-                    contentColor = if (status == SubscriptionStatus.INACTIVE) RedAccent else TextSecondaryColor
-                ),
-                border = BorderStroke(1.dp, if (status == SubscriptionStatus.INACTIVE) RedAccent else BorderColor),
-                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier
-                    .weight(1f)
-                    .height(34.dp)
-                    .testTag("set_status_inactive_btn")
-            ) {
-                Text("Lock (Inactive)", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                OutlinedButton(
+                    onClick = { viewModel.setSubscriptionStatus(SubscriptionStatus.INACTIVE) },
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = if (status == SubscriptionStatus.INACTIVE) RedAccent.copy(alpha = 0.2f) else SurfaceColor,
+                        contentColor = if (status == SubscriptionStatus.INACTIVE) RedAccent else TextSecondaryColor
+                    ),
+                    border = BorderStroke(1.dp, if (status == SubscriptionStatus.INACTIVE) RedAccent else BorderColor),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(34.dp)
+                        .testTag("set_status_inactive_btn")
+                ) {
+                    Text("Lock (Inactive)", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
 
@@ -589,6 +596,7 @@ fun SubscriptionPaymentModal(
 ) {
     var phoneNumber by remember { mutableStateOf("0712345678") }
     var amount by remember { mutableStateOf("15000") }
+    var validationError by remember { mutableStateOf<String?>(null) }
     val isProcessing by viewModel.paymentProcessing.collectAsState()
 
     AlertDialog(
@@ -599,12 +607,12 @@ fun SubscriptionPaymentModal(
                 Icon(
                     imageVector = Icons.Filled.Payment,
                     contentDescription = "Payment",
-                    tint = GreenAccent,
+                    tint = AmberAccent,
                     modifier = Modifier.size(22.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "SETTLE SUBSCRIPTION INVOICE",
+                    text = "M-PESA BILLING PREVIEW",
                     color = TextPrimaryColor,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
@@ -616,17 +624,30 @@ fun SubscriptionPaymentModal(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = "M-Pesa Express / Bank Card STK Push",
-                    color = TextSecondaryColor,
-                    fontSize = 12.sp
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(AmberAccent.copy(alpha = 0.14f))
+                        .border(1.dp, AmberAccent.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                        .padding(10.dp)
+                ) {
+                    Text(
+                        text = "Sandbox Preview Mode: Live M-Pesa Daraja STK charges require connecting your backend payment webhook.",
+                        color = TextPrimaryColor,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                }
 
                 OutlinedTextField(
                     value = phoneNumber,
-                    onValueChange = { phoneNumber = it },
+                    onValueChange = {
+                        phoneNumber = it
+                        validationError = null
+                    },
                     label = { Text("M-Pesa Phone Number") },
-                    placeholder = { Text("e.g. 0712345678") },
+                    placeholder = { Text("e.g. 0712345678 or +254712345678") },
                     leadingIcon = {
                         Icon(Icons.Filled.Phone, contentDescription = "Phone", tint = GreenAccent)
                     },
@@ -637,7 +658,10 @@ fun SubscriptionPaymentModal(
 
                 OutlinedTextField(
                     value = amount,
-                    onValueChange = { amount = it },
+                    onValueChange = {
+                        amount = it
+                        validationError = null
+                    },
                     label = { Text("Agreed Amount (KES)") },
                     leadingIcon = {
                         Icon(Icons.Filled.AttachMoney, contentDescription = "Amount", tint = AmberAccent)
@@ -647,31 +671,40 @@ fun SubscriptionPaymentModal(
                         .testTag("payment_amount_input")
                 )
 
+                if (validationError != null) {
+                    Text(
+                        text = validationError ?: "",
+                        color = RedAccent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
                 if (isProcessing) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .background(GreenAccent.copy(alpha = 0.15f))
+                            .background(AmberAccent.copy(alpha = 0.15f))
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
-                            color = GreenAccent,
+                            color = AmberAccent,
                             strokeWidth = 2.dp
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Processing STK Push...",
+                                text = "Recording Sandbox Preview...",
                                 color = TextPrimaryColor,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Please enter M-Pesa PIN on your phone",
+                                text = "Validating M-Pesa phone & invoice payload",
                                 color = TextSecondaryColor,
                                 fontSize = 10.sp
                             )
@@ -683,19 +716,33 @@ fun SubscriptionPaymentModal(
         confirmButton = {
             Button(
                 onClick = {
-                    viewModel.paySubscriptionInvoice(phoneNumber, amount)
-                    onDismiss()
+                    val cleanPhone = phoneNumber.replace(" ", "").replace("-", "").trim()
+                    val kenyanRegex = Regex("^(?:0[17]|\\+?254[17])\\d{8}$")
+                    val numericAmount = amount.replace(",", "").replace("KES", "", ignoreCase = true).trim().toDoubleOrNull()
+                    if (!kenyanRegex.matches(cleanPhone)) {
+                        validationError = "Enter a valid Kenyan M-Pesa number (07..., 01..., or +254...)."
+                    } else if (numericAmount == null || numericAmount <= 0.0) {
+                        validationError = "Enter a valid amount greater than 0 KES."
+                    } else {
+                        viewModel.paySubscriptionInvoice(cleanPhone, amount)
+                        onDismiss()
+                    }
                 },
                 enabled = !isProcessing,
-                colors = ButtonDefaults.buttonColors(containerColor = GreenAccent),
-                modifier = Modifier.testTag("confirm_pay_btn")
+                colors = ButtonDefaults.buttonColors(containerColor = AmberAccent),
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag("confirm_pay_btn")
             ) {
-                Text("Confirm & Pay KES $amount", color = BackgroundColor, fontWeight = FontWeight.Bold)
+                Text("Submit Billing Preview", color = BackgroundColor, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             if (!isProcessing) {
-                TextButton(onClick = onDismiss) {
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
                     Text("Cancel", color = TextSecondaryColor)
                 }
             }

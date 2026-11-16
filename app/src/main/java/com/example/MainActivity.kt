@@ -17,7 +17,10 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -40,6 +43,7 @@ import com.example.screens.AdminDashboard
 import com.example.screens.DriverDashboard
 import com.example.screens.LoginScreen
 import com.example.screens.ParentDashboard
+import com.example.security.configureAppCheck
 import com.example.ui.theme.AppThemeMode
 import com.example.ui.theme.BackgroundColor
 import com.example.ui.theme.GreenAccent
@@ -50,6 +54,17 @@ import kotlin.math.roundToInt
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+
+    // Configure Firebase App Check with launch intent before any Compose UI or Firebase operations
+    configureAppCheck(this, intent)
+    
+    // Ensure WebView code cache directories exist to avoid harmless Chromium simple_file_enumerator log warnings
+    try {
+      val webViewDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache")
+      java.io.File(webViewDir, "js").mkdirs()
+      java.io.File(webViewDir, "wasm").mkdirs()
+    } catch (ignored: Exception) {}
+
     enableEdgeToEdge()
     setContent {
       val viewModel: AppViewModel = viewModel()
@@ -66,10 +81,21 @@ class MainActivity : ComponentActivity() {
         val currentRole by viewModel.currentRole.collectAsStateWithLifecycle()
         val subscriptionStatus by viewModel.subscriptionStatus.collectAsStateWithLifecycle()
         val showAiDialog by viewModel.showAiAssistantDialog.collectAsStateWithLifecycle()
+        val rateLimitNotice by viewModel.rateLimitNotice.collectAsStateWithLifecycle()
+        val snackbarHostState = remember { SnackbarHostState() }
+
+        LaunchedEffect(rateLimitNotice) {
+          val notice = rateLimitNotice
+          if (!notice.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(notice)
+            viewModel.clearRateLimitNotice()
+          }
+        }
 
         Scaffold(
           modifier = Modifier.fillMaxSize(),
-          containerColor = BackgroundColor
+          containerColor = BackgroundColor,
+          snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
         ) { innerPadding ->
           val modifier = Modifier.padding(innerPadding)
           Box(modifier = Modifier.fillMaxSize()) {

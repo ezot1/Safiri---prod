@@ -1,0 +1,318 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-deny all unconfigured paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL HARDENED HELPERS ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        ('email' in request.auth.token &&
+         'email_verified' in request.auth.token &&
+         request.auth.token.email == 'info@veritasglobaladvisory.org' &&
+         request.auth.token.email_verified == true)
+      );
+    }
+
+    function isDriver() {
+      return isSignedIn() && exists(/databases/$(database)/documents/drivers/$(request.auth.uid));
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isNonEmptyString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    // --- ENTITY VALIDATION BLUEPRINTS ---
+
+    function isValidDriverRecord(data) {
+      return isNonEmptyString(data.uid, 1, 128) &&
+             isNonEmptyString(data.name, 2, 100) &&
+             isNonEmptyString(data.busPlate, 2, 24) &&
+             data.active is bool &&
+             (!('yearsExperience' in data) || (data.yearsExperience is int && data.yearsExperience >= 0 && data.yearsExperience <= 70)) &&
+             (!('onTimePct' in data) || (data.onTimePct is int && data.onTimePct >= 0 && data.onTimePct <= 100)) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidUserProfile(data) {
+      return isNonEmptyString(data.userId, 1, 128) &&
+             isNonEmptyString(data.email, 3, 160) &&
+             isNonEmptyString(data.displayName, 1, 100) &&
+             data.role in ['PARENT', 'DRIVER', 'ADMIN'] &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() <= 30)) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidStudent(data) {
+      return isNonEmptyString(data.parentUid, 1, 128) &&
+             isNonEmptyString(data.name, 1, 100) &&
+             isNonEmptyString(data.initials, 1, 5) &&
+             isNonEmptyString(data.parentName, 1, 100) &&
+             isNonEmptyString(data.parentEmail, 3, 160) &&
+             isNonEmptyString(data.parentPhone, 3, 30) &&
+             isNonEmptyString(data.assignedBusPlate, 2, 24) &&
+             isNonEmptyString(data.assignedDriverName, 1, 100) &&
+             isNonEmptyString(data.pickupStop, 1, 120) &&
+             isNonEmptyString(data.dropoffStop, 1, 120) &&
+             data.status in ['NOT_BOARDED', 'BOARDED', 'DROPPED_OFF', 'ABSENT'] &&
+             (!('classGrade' in data) || (data.classGrade is string && data.classGrade.size() <= 40)) &&
+             (!('schoolName' in data) || (data.schoolName is string && data.schoolName.size() <= 120)) &&
+             (!('boardedTime' in data) || (data.boardedTime is string && data.boardedTime.size() <= 40)) &&
+             (!('absentReason' in data) || (data.absentReason is string && data.absentReason.size() <= 200)) &&
+             (!('parentNote' in data) || (data.parentNote is string && data.parentNote.size() <= 300)) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidInterportalMessage(data) {
+      return isNonEmptyString(data.senderUid, 1, 128) &&
+             isNonEmptyString(data.senderName, 1, 100) &&
+             data.senderRole in ['PARENT', 'DRIVER', 'ADMIN', 'SYSTEM'] &&
+             data.recipientRole in ['PARENT', 'DRIVER', 'ADMIN', 'ALL'] &&
+             isNonEmptyString(data.targetBusPlate, 1, 24) &&
+             isNonEmptyString(data.content, 1, 1000) &&
+             (!('recipientUid' in data) || (data.recipientUid is string && data.recipientUid.size() <= 128)) &&
+             (!('studentName' in data) || (data.studentName is string && data.studentName.size() <= 100)) &&
+             (!('displayTime' in data) || (data.displayTime is string && data.displayTime.size() <= 40)) &&
+             isValidTimestamp(data.createdAt);
+    }
+
+    function isValidBusAlert(data) {
+      return isNonEmptyString(data.authorUid, 1, 128) &&
+             isNonEmptyString(data.title, 1, 120) &&
+             isNonEmptyString(data.detail, 1, 600) &&
+             data.severity in ['DANGER', 'WARNING', 'INFO'] &&
+             data.status in ['Ongoing', 'Upcoming', 'Scheduled', 'Resolved'] &&
+             (!('busPlate' in data) || (data.busPlate is string && data.busPlate.size() <= 24)) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCommunityIncident(data) {
+      return isNonEmptyString(data.reporterUid, 1, 128) &&
+             isNonEmptyString(data.title, 1, 140) &&
+             isNonEmptyString(data.location, 1, 140) &&
+             data.category in ['Traffic', 'Weather', 'Roadwork', 'Other'] &&
+             data.votes is int && data.votes >= 0 && data.votes <= 100000 &&
+             data.isActive is bool &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidFleetBus(data) {
+      return isNonEmptyString(data.plate, 2, 24) &&
+             isNonEmptyString(data.driverUid, 1, 128) &&
+             isNonEmptyString(data.driverName, 1, 100) &&
+             data.studentCount is int && data.studentCount >= 0 && data.studentCount <= 120 &&
+             data.occupancyCount is int && data.occupancyCount >= 0 && data.occupancyCount <= 120 &&
+             data.capacity is int && data.capacity >= 1 && data.capacity <= 120 &&
+             data.status in ['On Time', 'Delayed', 'Active', 'No Driver'] &&
+             data.speed is int && data.speed >= 0 && data.speed <= 200 &&
+             (data.lat is int || data.lat is float) && data.lat >= -90 && data.lat <= 90 &&
+             (data.lng is int || data.lng is float) && data.lng >= -180 && data.lng <= 180 &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // --- COLLECTIONS ---
+
+    match /admins/{uid} {
+      allow get: if isSignedIn() && isValidId(uid) && (request.auth.uid == uid || isAdmin());
+      allow list, create, update, delete: if false;
+    }
+
+    match /drivers/{uid} {
+      allow get: if isSignedIn() && isValidId(uid) && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn() && isValidId(uid) && isValidDriverRecord(incoming()) &&
+                       incoming().uid == uid &&
+                       incoming().keys().hasAll(['uid', 'name', 'busPlate', 'active', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['uid', 'name', 'busPlate', 'yearsExperience', 'onTimePct', 'active', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isAdmin();
+      allow update: if isSignedIn() && isValidId(uid) && isValidDriverRecord(incoming()) &&
+                       incoming().uid == existing().uid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'busPlate', 'yearsExperience', 'onTimePct', 'active', 'updatedAt']) &&
+                       isAdmin();
+      allow delete: if isSignedIn() && isValidId(uid) && isAdmin();
+    }
+
+    match /users/{uid} {
+      allow get: if isSignedIn() && isValidId(uid) && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn() && isValidId(uid) && isValidUserProfile(incoming()) &&
+                       request.auth.uid == uid &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'email', 'displayName', 'role', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'email', 'displayName', 'role', 'phone', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       (incoming().role == 'PARENT' || isAdmin());
+      allow update: if isSignedIn() && isValidId(uid) && isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'phone', 'updatedAt'])) ||
+                         (request.auth.uid == uid &&
+                          incoming().role == existing().role &&
+                          incoming().email == existing().email &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'phone', 'updatedAt']))
+                       );
+      allow delete: if isSignedIn() && isValidId(uid) && (request.auth.uid == uid || isAdmin());
+    }
+
+    match /students/{studentId} {
+      allow get: if isSignedIn() && isValidId(studentId) &&
+                    (existing().parentUid == request.auth.uid || isAdmin() || isDriver());
+      allow list: if isSignedIn() &&
+                     (resource.data.parentUid == request.auth.uid || isAdmin() || isDriver());
+      allow create: if isSignedIn() && isValidId(studentId) && isValidStudent(incoming()) &&
+                       incoming().keys().hasAll([
+                         'parentUid', 'name', 'initials', 'parentName', 'parentEmail',
+                         'parentPhone', 'assignedBusPlate', 'assignedDriverName',
+                         'pickupStop', 'dropoffStop', 'status', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'parentUid', 'name', 'initials', 'parentName', 'parentEmail',
+                         'parentPhone', 'assignedBusPlate', 'assignedDriverName',
+                         'pickupStop', 'dropoffStop', 'status', 'classGrade', 'schoolName',
+                         'boardedTime', 'absentReason', 'parentNote', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       (
+                         isAdmin() ||
+                         (incoming().parentUid == request.auth.uid && incoming().status == 'NOT_BOARDED')
+                       );
+      allow update: if isSignedIn() && isValidId(studentId) && isValidStudent(incoming()) &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         isAdmin() ||
+                         (existing().parentUid == request.auth.uid &&
+                          incoming().parentUid == existing().parentUid &&
+                          incoming().status in ['NOT_BOARDED', 'ABSENT'] &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['parentNote', 'pickupStop', 'status', 'absentReason', 'updatedAt'])) ||
+                         (isDriver() &&
+                          incoming().parentUid == existing().parentUid &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'boardedTime', 'updatedAt']))
+                       );
+      allow delete: if isSignedIn() && isValidId(studentId) && isAdmin();
+    }
+
+    match /interportal_messages/{messageId} {
+      allow get: if isSignedIn() && isValidId(messageId) &&
+                    (existing().senderUid == request.auth.uid ||
+                     existing().recipientUid == request.auth.uid ||
+                     isDriver() || isAdmin());
+      allow list: if isSignedIn() &&
+                     (resource.data.senderUid == request.auth.uid ||
+                      resource.data.recipientUid == request.auth.uid ||
+                      isDriver() || isAdmin());
+      allow create: if isSignedIn() && isValidId(messageId) && isValidInterportalMessage(incoming()) &&
+                       incoming().senderUid == request.auth.uid &&
+                       incoming().keys().hasAll(['senderUid', 'senderName', 'senderRole', 'recipientRole', 'targetBusPlate', 'content', 'createdAt']) &&
+                       incoming().keys().hasOnly(['senderUid', 'recipientUid', 'senderName', 'senderRole', 'recipientRole', 'targetBusPlate', 'studentName', 'content', 'displayTime', 'createdAt']) &&
+                       (
+                         incoming().senderRole == 'PARENT' ||
+                         (incoming().senderRole == 'DRIVER' && isDriver()) ||
+                         (incoming().senderRole == 'ADMIN' && isAdmin()) ||
+                         (incoming().senderRole == 'SYSTEM' && (isDriver() || isAdmin()))
+                       );
+      allow update: if false;
+      allow delete: if isSignedIn() && isValidId(messageId) && isAdmin();
+    }
+
+    match /alerts/{alertId} {
+      allow get: if isSignedIn() && isValidId(alertId) &&
+                    (existing().authorUid == request.auth.uid ||
+                     existing().status in ['Ongoing', 'Upcoming', 'Scheduled'] ||
+                     isDriver() || isAdmin());
+      allow list: if isSignedIn() &&
+                     (resource.data.status in ['Ongoing', 'Upcoming', 'Scheduled'] ||
+                      resource.data.authorUid == request.auth.uid ||
+                      isDriver() || isAdmin());
+      allow create: if isSignedIn() && isValidId(alertId) && isValidBusAlert(incoming()) &&
+                       incoming().authorUid == request.auth.uid &&
+                       incoming().keys().hasAll(['authorUid', 'title', 'detail', 'severity', 'status', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['authorUid', 'title', 'detail', 'severity', 'status', 'busPlate', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       (isAdmin() || isDriver());
+      allow update: if isSignedIn() && isValidId(alertId) && isValidBusAlert(incoming()) &&
+                       incoming().authorUid == existing().authorUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       existing().status != 'Resolved' &&
+                       (
+                         (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'detail', 'severity', 'status', 'busPlate', 'updatedAt'])) ||
+                         (isDriver() && existing().authorUid == request.auth.uid &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+                       );
+      allow delete: if isSignedIn() && isValidId(alertId) && isAdmin();
+    }
+
+    match /community_incidents/{incidentId} {
+      allow get: if isSignedIn() && isValidId(incidentId) &&
+                    (existing().isActive == true || existing().reporterUid == request.auth.uid || isAdmin() || isDriver());
+      allow list: if isSignedIn() &&
+                     (resource.data.isActive == true || resource.data.reporterUid == request.auth.uid || isAdmin() || isDriver());
+      allow create: if isSignedIn() && isValidId(incidentId) && isValidCommunityIncident(incoming()) &&
+                       incoming().reporterUid == request.auth.uid &&
+                       incoming().isActive == true &&
+                       incoming().votes == 1 &&
+                       incoming().keys().hasAll(['reporterUid', 'title', 'location', 'category', 'votes', 'isActive', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['reporterUid', 'title', 'location', 'category', 'votes', 'isActive', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt);
+      allow update: if isSignedIn() && isValidId(incidentId) && isValidCommunityIncident(incoming()) &&
+                       incoming().reporterUid == existing().reporterUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       existing().isActive == true &&
+                       (
+                         (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'location', 'category', 'votes', 'isActive', 'updatedAt'])) ||
+                         (incoming().diff(existing()).affectedKeys().hasOnly(['votes', 'updatedAt']) &&
+                          (incoming().votes == existing().votes + 1 || incoming().votes == existing().votes - 1))
+                       );
+      allow delete: if isSignedIn() && isValidId(incidentId) &&
+                       (existing().reporterUid == request.auth.uid || isAdmin());
+    }
+
+    match /fleet_buses/{busId} {
+      allow get: if isSignedIn() && isValidId(busId) &&
+                    (existing().status in ['On Time', 'Delayed', 'Active'] ||
+                     existing().driverUid == request.auth.uid ||
+                     isDriver() || isAdmin());
+      allow list: if isSignedIn() &&
+                     (resource.data.status in ['On Time', 'Delayed', 'Active'] ||
+                      resource.data.driverUid == request.auth.uid ||
+                      isDriver() || isAdmin());
+      allow create: if isSignedIn() && isValidId(busId) && isValidFleetBus(incoming()) &&
+                       incoming().keys().hasAll(['plate', 'driverUid', 'driverName', 'studentCount', 'occupancyCount', 'capacity', 'status', 'speed', 'lat', 'lng', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['plate', 'driverUid', 'driverName', 'studentCount', 'occupancyCount', 'capacity', 'status', 'speed', 'lat', 'lng', 'updatedAt']) &&
+                       isAdmin();
+      allow update: if isSignedIn() && isValidId(busId) && isValidFleetBus(incoming()) &&
+                       (
+                         (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['plate', 'driverUid', 'driverName', 'studentCount', 'occupancyCount', 'capacity', 'status', 'speed', 'lat', 'lng', 'updatedAt'])) ||
+                         (isDriver() && existing().driverUid == request.auth.uid &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['occupancyCount', 'status', 'speed', 'lat', 'lng', 'updatedAt']))
+                       );
+      allow delete: if isSignedIn() && isValidId(busId) && isAdmin();
+    }
+  }
+}

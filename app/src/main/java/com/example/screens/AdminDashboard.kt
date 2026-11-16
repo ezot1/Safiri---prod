@@ -193,6 +193,7 @@ fun AdminFleetTab(
     val boardedCount by viewModel.boardedCount.collectAsState()
     val subStatus by viewModel.subscriptionStatus.collectAsState()
     val subAmount by viewModel.agreedMonthlyAmount.collectAsState()
+    var showPayDialog by remember { mutableStateOf(false) }
 
     ScrollView(
         modifier = Modifier.fillMaxSize(),
@@ -242,11 +243,11 @@ fun AdminFleetTab(
                     }
                 }
                 Button(
-                    onClick = { viewModel.paySubscriptionInvoice("", subAmount) },
+                    onClick = { showPayDialog = true },
                     colors = ButtonDefaults.buttonColors(containerColor = AmberAccent),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.height(30.dp)
+                    modifier = Modifier.heightIn(min = 48.dp)
                 ) {
                     Text("Pay Now", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = BackgroundColor)
                 }
@@ -330,6 +331,13 @@ fun AdminFleetTab(
 
         Spacer(modifier = Modifier.height(24.dp))
     }
+
+    if (showPayDialog) {
+        SubscriptionPaymentModal(
+            viewModel = viewModel,
+            onDismiss = { showPayDialog = false }
+        )
+    }
 }
 
 // ==========================================
@@ -341,6 +349,7 @@ fun AdminMapViewTab(
     onOpenSidebar: () -> Unit = {}
 ) {
     val fleetBuses by viewModel.adminFleetBuses.collectAsState()
+    val mapsApiKey by viewModel.mapsApiKey.collectAsState()
 
     Column(
         modifier = Modifier.fillMaxSize()
@@ -383,6 +392,7 @@ fun AdminMapViewTab(
             progressPct = 0f,
             isMultipleBuses = true,
             multipleBusOffsets = busOffsets,
+            customApiKey = mapsApiKey,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(260.dp)

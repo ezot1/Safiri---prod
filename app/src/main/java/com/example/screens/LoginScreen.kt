@@ -26,6 +26,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.util.Log
+import androidx.compose.ui.platform.LocalContext
+import androidx.credentials.CredentialManager
+import com.example.security.GoogleAuthHelper
 import kotlinx.coroutines.launch
 import com.example.models.UserRole
 import com.example.ui.theme.*
@@ -36,14 +40,16 @@ fun LoginScreen(
     viewModel: AppViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val credentialManager = remember(context) { CredentialManager.create(context) }
+
     var isSignUpMode by remember { mutableStateOf(false) }
     var showParentSignupWizard by remember { mutableStateOf(false) }
     var selectedRole by remember { mutableStateOf(UserRole.PARENT) }
     var fullName by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("parent@safiri.co.ke") }
-    var password by remember { mutableStateOf("demo1234") }
-    var showGoogleDialog by remember { mutableStateOf(false) }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var isGoogleSigningIn by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -56,20 +62,30 @@ fun LoginScreen(
         return
     }
 
-    // Pre-fill email based on selected role ONLY in sign in mode
+    LaunchedEffect(Unit) {
+        GoogleAuthHelper.attemptAutoSignIn(
+            context = context,
+            credentialManager = credentialManager,
+            onAuthSuccess = { fbUser ->
+                viewModel.handleGoogleFirebaseUser(
+                    firebaseUser = fbUser,
+                    selectedRole = selectedRole,
+                    isSignUpMode = false
+                ) { success, msg ->
+                    if (!success) errorMessage = msg
+                }
+            },
+            onUnauthenticated = {},
+            scope = coroutineScope
+        )
+    }
+
     LaunchedEffect(selectedRole, isSignUpMode) {
-        if (!isSignUpMode) {
-            email = when (selectedRole) {
-                UserRole.PARENT -> "parent@safiri.co.ke"
-                UserRole.DRIVER -> "driver@safiri.co.ke"
-                UserRole.ADMIN -> "admin@safiri.co.ke"
-            }
-            errorMessage = null
-        } else {
+        errorMessage = null
+        if (isSignUpMode) {
+            fullName = ""
             email = ""
             password = ""
-            fullName = ""
-            errorMessage = null
         }
     }
 
@@ -481,9 +497,36 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // --- GOOGLE AUTHENTICATION BUTTON ---
+        // --- GOOGLE AUTHENTICATION BUTTON (Jetpack Credential Manager) ---
         OutlinedButton(
-            onClick = { showGoogleDialog = true },
+            onClick = {
+                errorMessage = null
+                isGoogleSigningIn = true
+                GoogleAuthHelper.onGoogleSignInClicked(
+                    context = context,
+                    credentialManager = credentialManager,
+                    onAuthSuccess = { fbUser ->
+                        viewModel.handleGoogleFirebaseUser(
+                            firebaseUser = fbUser,
+                            selectedRole = selectedRole,
+                            isSignUpMode = isSignUpMode
+                        ) { success, msg ->
+                            isGoogleSigningIn = false
+                            if (!success) errorMessage = msg
+                        }
+                    },
+                    onAuthError = { err ->
+                        isGoogleSigningIn = false
+                        errorMessage = err
+                    },
+                    scope = coroutineScope,
+                    onAuthCancelled = {
+                        isGoogleSigningIn = false
+                        Log.w("Auth", "Interactive Google Sign-In cancelled by user")
+                    }
+                )
+            },
+            enabled = !isGoogleSigningIn,
             colors = ButtonDefaults.outlinedButtonColors(
                 containerColor = SurfaceColor,
                 contentColor = TextPrimaryColor
@@ -500,7 +543,6 @@ fun LoginScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
-                // A simulated Google 'G' icon colored cleanly
                 Text(
                     text = "G",
                     color = AccentBlue,
@@ -519,184 +561,6 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(40.dp))
     }
-    }
-
-    // --- GOOGLE ACCOUNT CHOOSER DIALOG ---
-    if (showGoogleDialog) {
-        AlertDialog(
-            onDismissRequest = { showGoogleDialog = false },
-            title = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("G", color = AccentBlue, fontWeight = FontWeight.Bold, fontSize = 24.sp)
-                        Text("o", color = RedAccent, fontWeight = FontWeight.Bold, fontSize = 24.sp)
-                        Text("o", color = AmberAccent, fontWeight = FontWeight.Bold, fontSize = 24.sp)
-                        Text("g", color = AccentBlue, fontWeight = FontWeight.Bold, fontSize = 24.sp)
-                        Text("l", color = GreenAccent, fontWeight = FontWeight.Bold, fontSize = 24.sp)
-                        Text("e", color = RedAccent, fontWeight = FontWeight.Bold, fontSize = 24.sp)
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Choose an account",
-                        color = TextPrimaryColor,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "to continue to Safiri",
-                        color = TextSecondaryColor,
-                        fontSize = 12.sp
-                    )
-                }
-            },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Account 1: Ezra Ochieng (Dynamic personalization!)
-                    val userEmail = "EzraO652@gmail.com"
-                    val userName = "Ezra Ochieng"
-                    
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                showGoogleDialog = false
-                                isGoogleSigningIn = true
-                                coroutineScope.launch {
-                                    kotlinx.coroutines.delay(1200)
-                                    if (isSignUpMode) {
-                                        viewModel.signUp(userName, userEmail, selectedRole, "google") { success, message ->
-                                            isGoogleSigningIn = false
-                                            if (!success) errorMessage = message
-                                        }
-                                    } else {
-                                        viewModel.signIn(userEmail, "", selectedRole) { success, message ->
-                                            isGoogleSigningIn = false
-                                            if (!success) errorMessage = message
-                                        }
-                                    }
-                                }
-                            }
-                            .background(Surface2Color)
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(AccentBlue),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "E",
-                                color = BackgroundColor,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = userName,
-                                color = TextPrimaryColor,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = userEmail,
-                                color = TextSecondaryColor,
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Account 2: Simulated Guest Account
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                showGoogleDialog = false
-                                isGoogleSigningIn = true
-                                val guestEmail = "guest.user@gmail.com"
-                                val guestName = "Guest User"
-                                coroutineScope.launch {
-                                    kotlinx.coroutines.delay(1200)
-                                    if (isSignUpMode) {
-                                        viewModel.signUp(guestName, guestEmail, selectedRole, "google") { success, message ->
-                                            isGoogleSigningIn = false
-                                            if (!success) errorMessage = message
-                                        }
-                                    } else {
-                                        viewModel.signIn(guestEmail, "", selectedRole) { success, message ->
-                                            isGoogleSigningIn = false
-                                            if (!success) errorMessage = message
-                                        }
-                                    }
-                                }
-                            }
-                            .background(Surface2Color)
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(PurpleAccent),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "G",
-                                color = BackgroundColor,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = "Guest User",
-                                color = TextPrimaryColor,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "guest.user@gmail.com",
-                                color = TextSecondaryColor,
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "To continue, Google will share your name, email address, and profile picture with Safiri. See Privacy Policy and Terms.",
-                        color = TextTertiaryColor,
-                        fontSize = 10.sp,
-                        lineHeight = 14.sp
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showGoogleDialog = false }) {
-                    Text("Cancel", color = AccentBlue)
-                }
-            },
-            containerColor = SurfaceColor,
-            shape = RoundedCornerShape(24.dp)
-        )
     }
 
     // --- GOOGLE SIGNING IN LOADING OVERLAY ---

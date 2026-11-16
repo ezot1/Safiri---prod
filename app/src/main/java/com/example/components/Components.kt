@@ -542,23 +542,35 @@ fun MapHero(
     multipleBusOffsets: List<Pair<Float, Float>> = emptyList(), // Custom drift for other buses
     customApiKey: String = ""
 ) {
-    var isVectorMode by remember { mutableStateOf(true) } // Fast vector transit map by default!
-    var webViewRef by remember { mutableStateOf<WebView?>(null) }
-    var isLoaded by remember { mutableStateOf(false) }
-    var hasError by remember { mutableStateOf(false) }
-    var reloadTrigger by remember { mutableStateOf(0) }
-
     val apiKey = remember(customApiKey) {
-        if (customApiKey.isNotBlank()) {
+        val candidate = if (customApiKey.isNotBlank()) {
             customApiKey
         } else {
             try {
                 com.example.BuildConfig.GOOGLE_MAPS_API_KEY
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 ""
             }
+        }.replace("\\", "").replace("\"", "").replace("'", "").trim()
+
+        if (candidate.isNotBlank() &&
+            !candidate.contains("YOUR_") &&
+            !candidate.contains("MY_") &&
+            !candidate.contains("placeholder") &&
+            !candidate.contains("API_KEY")
+        ) {
+            candidate
+        } else {
+            ""
         }
     }
+    val hasGoogleMapsKey = apiKey.isNotEmpty()
+
+    var isVectorMode by remember { mutableStateOf(false) } // Google Maps active by default!
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var isLoaded by remember { mutableStateOf(false) }
+    var hasError by remember { mutableStateOf(false) }
+    var reloadTrigger by remember { mutableStateOf(0) }
 
     // Auto-timeout fallback: if page hasn't loaded in 12 seconds, show offline error fallback
     LaunchedEffect(reloadTrigger) {
@@ -631,21 +643,12 @@ fun MapHero(
                             webViewClient = object : WebViewClient() {
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     isLoaded = true
+                                    hasError = false
                                     if (isMultipleBuses) {
-                                        evaluateJavascript("initAdminBuses();", null)
+                                        evaluateJavascript("if (typeof initAdminBuses === 'function') initAdminBuses();", null)
                                     } else {
-                                        evaluateJavascript("updateProgress($progressPct);", null)
+                                        evaluateJavascript("if (typeof updateProgress === 'function') updateProgress($progressPct);", null)
                                     }
-                                }
-
-                                @Deprecated("Deprecated in Java")
-                                override fun onReceivedError(
-                                    view: WebView?,
-                                    errorCode: Int,
-                                    description: String?,
-                                    failingUrl: String?
-                                ) {
-                                    hasError = true
                                 }
 
                                 override fun onReceivedError(
@@ -653,6 +656,7 @@ fun MapHero(
                                     request: android.webkit.WebResourceRequest?,
                                     error: android.webkit.WebResourceError?
                                 ) {
+                                    // Only show offline fallback if the main HTML document itself fails
                                     if (request?.isForMainFrame == true) {
                                         hasError = true
                                     }
@@ -839,17 +843,61 @@ fun MapHero(
             }
         }
 
+        // Bottom-left Google Maps live status indicator
+        if (!isVectorMode) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(12.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Surface2Color.copy(alpha = 0.92f))
+                    .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(GreenAccent)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (hasGoogleMapsKey) "Google Maps Live" else "Live Street Map",
+                    color = TextPrimaryColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
         // Map Mode Switcher overlay at the bottom right
         Row(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(12.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Surface2Color.copy(alpha = 0.9f))
+                .background(Surface2Color.copy(alpha = 0.92f))
                 .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
                 .padding(2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (!isVectorMode) AccentBlue else Color.Transparent)
+                    .clickable { isVectorMode = false }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (hasGoogleMapsKey) "GOOGLE MAPS" else "MAP",
+                        color = if (!isVectorMode) BackgroundColor else TextSecondaryColor,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
@@ -860,20 +908,6 @@ fun MapHero(
                 Text(
                     text = "VECTOR",
                     color = if (isVectorMode) BackgroundColor else TextSecondaryColor,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(if (!isVectorMode) AccentBlue else Color.Transparent)
-                    .clickable { isVectorMode = false }
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text = "GPS LIVE",
-                    color = if (!isVectorMode) BackgroundColor else TextSecondaryColor,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -1045,6 +1079,13 @@ private fun getMapHtml(apiKey: String): String {
                 },
                 title: "Bus KDE 732X"
             });
+
+            setTimeout(function() {
+                if (map) {
+                    google.maps.event.trigger(map, 'resize');
+                    map.setCenter({ lat: -1.2825, lng: 36.7820 });
+                }
+            }, 250);
         }
 
         function initLeafletMap() {
@@ -1062,10 +1103,10 @@ private fun getMapHtml(apiKey: String): String {
                     attributionControl: false
                 }).setView([-1.2825, 36.7820], 13);
 
-                L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-                    attribution: '&copy; OpenStreetMap &copy; CARTO',
-                    subdomains: 'abcd',
-                    maxZoom: 20
+                // Clean, watermark-free tile layer with zero API key requirement
+                L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap',
+                    maxZoom: 19
                 }).addTo(map);
 
                 stopsData.forEach(function(stop) {
@@ -1196,7 +1237,7 @@ private fun getMapHtml(apiKey: String): String {
             }
 
             if (isGoogleMap) {
-                map.setView(new google.maps.LatLng(-1.2825, 36.7820));
+                map.setCenter({ lat: -1.2825, lng: 36.7820 });
                 map.setZoom(12);
             } else {
                 map.setView([-1.2825, 36.7820], 12);
@@ -1222,6 +1263,10 @@ private fun getMapHtml(apiKey: String): String {
                 map.invalidateSize();
             }
         }
+
+        window.initGoogleMap = function() {
+            initGoogleMap();
+        };
 
         // Global Google Auth Failure callback
         window.gm_authFailure = function() {
@@ -1250,7 +1295,7 @@ private fun getMapHtml(apiKey: String): String {
                     console.warn("Google Maps initialization timed out. Falling back to Leaflet...");
                     initLeafletMap();
                 }
-            }, 4000);
+            }, 12000);
         } else {
             initLeafletMap();
         }

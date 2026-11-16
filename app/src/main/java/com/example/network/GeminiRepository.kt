@@ -1,240 +1,140 @@
 package com.example.network
 
 import android.util.Log
-import com.example.BuildConfig
+import com.google.firebase.Firebase
+import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.generationConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
-import org.json.JSONObject
-import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.withTimeout
 
 object GeminiRepository {
 
     private const val TAG = "GeminiRepository"
-    private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+    private const val MAX_PROMPT_CHARS = 800
+    private const val AI_TIMEOUT_MS = 60_000L
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .build()
+    private val inFlightMutex = Mutex()
 
-    private var customApiKey: String? = null
-
-    fun setCustomApiKey(key: String) {
-        customApiKey = key.trim()
+    private val fastModel by lazy {
+        Firebase.ai.generativeModel(
+            modelName = "gemini-3.5-flash-lite",
+            generationConfig = generationConfig {
+                temperature = 0.3f
+            }
+        )
     }
 
-    private fun getApiKey(): String {
-        if (!customApiKey.isNull_or_blank()) {
-            return customApiKey!!
-        }
-        val key = BuildConfig.GEMINI_API_KEY
-        return if (key.isNull_or_blank() || key == "MY_GEMINI_API_KEY") {
-            ""
-        } else {
-            key
-        }
+    private val generalModel by lazy {
+        Firebase.ai.generativeModel(
+            modelName = "gemini-3.8-flash"
+        )
     }
 
-    private fun String?.isNull_or_blank(): Boolean = this == null || this.trim().isEmpty()
+    private fun validatePrompt(prompt: String): String? {
+        val trimmed = prompt.trim()
+        if (trimmed.isEmpty()) return "Please enter a prompt first."
+        if (trimmed.length > MAX_PROMPT_CHARS) {
+            return "Prompt is too long (${trimmed.length}/$MAX_PROMPT_CHARS characters)."
+        }
+        return null
+    }
 
     /**
-     * Low-Latency Fast Assistant using gemini-3.1-flash-lite-preview
+     * Low-Latency Fast Assistant using gemini-3.5-flash-lite via Firebase AI Logic.
      */
     suspend fun generateFastResponse(prompt: String): String = withContext(Dispatchers.IO) {
-        val model = "gemini-3.1-flash-lite-preview"
-        val jsonPayload = JSONObject().apply {
-            put("contents", JSONArray().apply {
-                put(JSONObject().apply {
-                    put("parts", JSONArray().apply {
-                        put(JSONObject().put("text", prompt))
-                    })
-                })
-            })
-            put("generationConfig", JSONObject().apply {
-                put("temperature", 0.3)
-            })
+        validatePrompt(prompt)?.let { return@withContext it }
+        executeGuarded {
+            val response = withTimeout(AI_TIMEOUT_MS) {
+                fastModel.generateContent(prompt.trim())
+            }
+            response.text?.takeIf { it.isNotBlank() }
+                ?: "Model returned an empty response."
         }
-        return@withContext executeRequest(model, jsonPayload)
     }
 
     /**
-     * Maps Grounded Response using gemini-3.5-flash with Google Maps Tool
+     * Location-aware Transit Assistant using gemini-3.8-flash via Firebase AI Logic.
      */
-    suspend fun generateMapsGroundedResponse(prompt: String, userLocation: String = "Nairobi, Kenya"): String = withContext(Dispatchers.IO) {
-        val model = "gemini-3.5-flash"
-        val fullPrompt = "Context location: $userLocation. $prompt"
-        val jsonPayload = JSONObject().apply {
-            put("contents", JSONArray().apply {
-                put(JSONObject().apply {
-                    put("parts", JSONArray().apply {
-                        put(JSONObject().put("text", fullPrompt))
-                    })
-                })
-            })
-            // Add Google Maps Tool Grounding
-            put("tools", JSONArray().apply {
-                put(JSONObject().apply {
-                    put("googleMaps", JSONObject())
-                })
-            })
+    suspend fun generateMapsGroundedResponse(
+        prompt: String,
+        userLocation: String = "Nairobi, Kenya"
+    ): String = withContext(Dispatchers.IO) {
+        validatePrompt(prompt)?.let { return@withContext it }
+        val fullPrompt = "Transit location context: $userLocation. Provide practical local route and traffic guidance for this query: ${prompt.trim()}"
+        executeGuarded {
+            val response = withTimeout(AI_TIMEOUT_MS) {
+                generalModel.generateContent(fullPrompt)
+            }
+            response.text?.takeIf { it.isNotBlank() }
+                ?: "Model returned an empty response."
         }
-        return@withContext executeRequest(model, jsonPayload)
     }
 
     /**
-     * High Thinking Mode using gemini-3.1-pro-preview with thinkingLevel set to HIGH
-     * Note: Do NOT set maxOutputTokens
+     * High Thinking / Structured Safety Analysis using gemini-3.8-flash via Firebase AI Logic.
      */
     suspend fun generateHighThinkingResponse(prompt: String): String = withContext(Dispatchers.IO) {
-        val model = "gemini-3.1-pro-preview"
-        val jsonPayload = JSONObject().apply {
-            put("contents", JSONArray().apply {
-                put(JSONObject().apply {
-                    put("parts", JSONArray().apply {
-                        put(JSONObject().put("text", prompt))
-                    })
-                })
-            })
-            put("generationConfig", JSONObject().apply {
-                put("thinkingConfig", JSONObject().apply {
-                    put("thinkingLevel", "HIGH")
-                })
-                // Explicitly DO NOT set maxOutputTokens as instructed
-            })
+        validatePrompt(prompt)?.let { return@withContext it }
+        val analysisPrompt = "Think step by step and provide a structured safety, risk, and contingency analysis for: ${prompt.trim()}"
+        executeGuarded {
+            val response = withTimeout(AI_TIMEOUT_MS) {
+                generalModel.generateContent(analysisPrompt)
+            }
+            response.text?.takeIf { it.isNotBlank() }
+                ?: "Model returned an empty response."
         }
-        return@withContext executeRequest(model, jsonPayload)
     }
 
     /**
-     * General tasks using gemini-3.5-flash
+     * General tasks using gemini-3.8-flash via Firebase AI Logic.
      */
     suspend fun generateGeneralResponse(prompt: String): String = withContext(Dispatchers.IO) {
-        val model = "gemini-3.5-flash"
-        val jsonPayload = JSONObject().apply {
-            put("contents", JSONArray().apply {
-                put(JSONObject().apply {
-                    put("parts", JSONArray().apply {
-                        put(JSONObject().put("text", prompt))
-                    })
-                })
-            })
+        validatePrompt(prompt)?.let { return@withContext it }
+        executeGuarded {
+            val response = withTimeout(AI_TIMEOUT_MS) {
+                generalModel.generateContent(prompt.trim())
+            }
+            response.text?.takeIf { it.isNotBlank() }
+                ?: "Model returned an empty response."
         }
-        return@withContext executeRequest(model, jsonPayload)
     }
 
     /**
-     * Complex Reasoning & Analysis using gemini-3.1-pro-preview
+     * Complex Reasoning & Analysis using gemini-3.8-flash via Firebase AI Logic.
      */
     suspend fun generateComplexAnalysis(prompt: String): String = withContext(Dispatchers.IO) {
-        val model = "gemini-3.1-pro-preview"
-        val jsonPayload = JSONObject().apply {
-            put("contents", JSONArray().apply {
-                put(JSONObject().apply {
-                    put("parts", JSONArray().apply {
-                        put(JSONObject().put("text", prompt))
-                    })
-                })
-            })
+        validatePrompt(prompt)?.let { return@withContext it }
+        val analysisPrompt = "Provide a detailed analytical breakdown and actionable recommendations for: ${prompt.trim()}"
+        executeGuarded {
+            val response = withTimeout(AI_TIMEOUT_MS) {
+                generalModel.generateContent(analysisPrompt)
+            }
+            response.text?.takeIf { it.isNotBlank() }
+                ?: "Model returned an empty response."
         }
-        return@withContext executeRequest(model, jsonPayload)
     }
 
-    private fun executeRequest(
-        model: String,
-        payload: JSONObject,
-        retryCount: Int = 0
-    ): String {
-        val apiKey = getApiKey()
-        if (apiKey.isEmpty()) {
-            return "Note: GEMINI_API_KEY is not set or configured. Please set GEMINI_API_KEY in the Secrets panel."
+    private suspend fun executeGuarded(block: suspend () -> String): String {
+        if (!inFlightMutex.tryLock()) {
+            return "An AI request is already in progress. Please wait for it to finish."
         }
-
-        val url = "$BASE_URL/$model:generateContent?key=$apiKey"
-        val mediaType = "application/json; charset=utf-8".toMediaType()
-        val body = payload.toString().toRequestBody(mediaType)
-
-        val request = Request.Builder()
-            .url(url)
-            .post(body)
-            .build()
-
         return try {
-            client.newCall(request).execute().use { response ->
-                val responseString = response.body?.string() ?: ""
-
-                if (!response.isSuccessful) {
-                    Log.e(TAG, "Gemini API error ($model): ${response.code} - $responseString")
-
-                    // Handle 429 Rate Limit / Quota Exhaustion specifically
-                    if (response.code == 429) {
-                        if (retryCount < 2) {
-                            // Retry after short backoff delay
-                            Thread.sleep(1500L * (retryCount + 1))
-                            return executeRequest(model, payload, retryCount + 1)
-                        }
-
-                        // Try fallback to standard robust models if rate limited on preview models
-                        val fallbackModel = when {
-                            model != "gemini-2.5-flash" -> "gemini-2.5-flash"
-                            else -> "gemini-1.5-flash"
-                        }
-                        if (model != fallbackModel && retryCount <= 2) {
-                            Log.w(TAG, "Rate limited on $model. Retrying with fallback model $fallbackModel...")
-                            // Simplify payload for fallback model by removing model-specific thinking/tools if present
-                            val simplePayload = JSONObject().apply {
-                                put("contents", payload.optJSONArray("contents"))
-                            }
-                            return executeRequest(fallbackModel, simplePayload, retryCount + 1)
-                        }
-
-                        return "Quota Exceeded / Rate Limit (429): The Gemini API rate limit for this key or model ($model) has been reached. Please wait a few seconds before trying again, or check your API key quota in AI Studio."
-                    }
-
-                    // Handle 404 or 400 (e.g. model name or specific tool/thinking config not supported on standard key)
-                    if (response.code == 404 || response.code == 400) {
-                        val fallbackModel = "gemini-2.5-flash"
-                        if (model != fallbackModel && retryCount == 0) {
-                            Log.w(TAG, "Model $model returned ${response.code}. Retrying with $fallbackModel...")
-                            val simplePayload = JSONObject().apply {
-                                put("contents", payload.optJSONArray("contents"))
-                            }
-                            return executeRequest(fallbackModel, simplePayload, retryCount = 1)
-                        }
-                    }
-
-                    return "Gemini API Error (${response.code}): ${response.message}\n${responseString.take(200)}"
-                }
-
-                val jsonResponse = JSONObject(responseString)
-                val candidates = jsonResponse.optJSONArray("candidates")
-                if (candidates != null && candidates.length() > 0) {
-                    val firstCand = candidates.getJSONObject(0)
-                    val content = firstCand.optJSONObject("content")
-                    val parts = content?.optJSONArray("parts")
-                    if (parts != null && parts.length() > 0) {
-                        val textBuilder = StringBuilder()
-                        for (i in 0 until parts.length()) {
-                            val partObj = parts.getJSONObject(i)
-                            if (partObj.has("text")) {
-                                textBuilder.append(partObj.getString("text"))
-                            }
-                        }
-                        if (textBuilder.isNotEmpty()) {
-                            return textBuilder.toString()
-                        }
-                    }
-                }
-                "No output content generated by $model."
-            }
+            block()
+        } catch (e: TimeoutCancellationException) {
+            Log.e(TAG, "Firebase AI generation timed out", e)
+            "Generation timed out after 60 seconds. Please try again."
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "Failed Gemini API call for $model", e)
-            "Unable to reach Gemini AI service: ${e.localizedMessage ?: "Network request failed"}"
+            Log.e(TAG, "Firebase AI generation failed", e)
+            e.localizedMessage ?: "Firebase AI generation failed."
+        } finally {
+            inFlightMutex.unlock()
         }
     }
 }

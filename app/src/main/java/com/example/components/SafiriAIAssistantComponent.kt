@@ -22,6 +22,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.security.AppRateLimiter
 import com.example.ui.theme.*
 import com.example.viewmodel.AppViewModel
 
@@ -44,6 +46,7 @@ fun SafiriAIAssistantDialog(
 
     val isFirebaseActive = viewModel.isFirebaseAuthEnabled
     val isFirestoreActive = viewModel.isFirestoreEnabled
+    val remainingQuota by viewModel.aiRemainingDailyQuota.collectAsStateWithLifecycle()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -253,10 +256,10 @@ fun SafiriAIAssistantDialog(
                         .padding(8.dp)
                 ) {
                     val description = when (selectedMode) {
-                        AIMode.FAST_LITE -> "⚡ Model: gemini-3.1-flash-lite-preview — Optimized for low-latency, rapid status updates and instant queries."
-                        AIMode.MAPS_GROUNDED -> "📍 Model: gemini-3.5-flash with Google Maps tool — Grounded with live location, traffic, and place data."
-                        AIMode.HIGH_THINKING -> "🧠 Model: gemini-3.1-pro-preview with thinkingLevel = HIGH — Deep multi-step reasoning for complex safety analysis."
-                        AIMode.GENERAL_ANALYSIS -> "📝 Model: gemini-3.5-flash / pro — General content drafting, summaries, and edits."
+                        AIMode.FAST_LITE -> "⚡ Model: gemini-3.5-flash-lite (Firebase AI) — Optimized for low-latency, rapid status updates and instant queries."
+                        AIMode.MAPS_GROUNDED -> "📍 Model: gemini-3.8-flash (Firebase AI) — Nairobi route & traffic-aware transit guidance."
+                        AIMode.HIGH_THINKING -> "🧠 Model: gemini-3.8-flash (Firebase AI) — Deep multi-step reasoning for complex safety analysis."
+                        AIMode.GENERAL_ANALYSIS -> "📝 Model: gemini-3.8-flash (Firebase AI) — General content drafting, summaries, and parent updates."
                     }
                     Text(
                         text = description,
@@ -268,10 +271,35 @@ fun SafiriAIAssistantDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Input Field
+                // Input Field with max length & quota badge
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "DAILY QUOTA: $remainingQuota/${AppRateLimiter.AI_DAILY_QUOTA} LEFT",
+                        color = if (remainingQuota <= 5) AmberAccent else TextTertiaryColor,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = "${userPrompt.length}/${AppRateLimiter.MAX_AI_PROMPT_CHARS}",
+                        color = if (userPrompt.length >= AppRateLimiter.MAX_AI_PROMPT_CHARS) RedAccent else TextTertiaryColor,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+
                 OutlinedTextField(
                     value = userPrompt,
-                    onValueChange = { userPrompt = it },
+                    onValueChange = {
+                        if (it.length <= AppRateLimiter.MAX_AI_PROMPT_CHARS) {
+                            userPrompt = it
+                        }
+                    },
                     placeholder = { Text("Ask Gemini AI...", color = TextTertiaryColor, fontSize = 12.sp) },
                     modifier = Modifier
                         .fillMaxWidth()

@@ -725,7 +725,7 @@ fun ParentSignupScreen(
                                 SummaryDetailRow(label = "Email", value = email)
                                 SummaryDetailRow(label = "Assigned Stop", value = pickupStop)
                                 SummaryDetailRow(label = "Assigned Bus", value = if (pickupStop.contains("Kawangware")) "KBZ 441G" else "KDE 732X")
-                                SummaryDetailRow(label = "Data Sync", value = "Supabase Realtime Enabled ✓")
+                                SummaryDetailRow(label = "Data Sync", value = "Firebase Firestore Sync Enabled ✓")
                             }
                         }
 

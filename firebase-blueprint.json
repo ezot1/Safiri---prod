@@ -1,0 +1,437 @@
+{
+  "entities": {
+    "AdminRecord": {
+      "title": "Admin Record",
+      "description": "Server-provisioned administrator allowlist entry mapped by Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the administrator."
+        },
+        "email": {
+          "type": "string",
+          "description": "Administrator email address."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "DriverRecord": {
+      "title": "Driver Roster Record",
+      "description": "Admin-provisioned driver authorization record mapped by Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the driver."
+        },
+        "name": {
+          "type": "string",
+          "description": "Driver full name."
+        },
+        "busPlate": {
+          "type": "string",
+          "description": "Assigned shuttle license plate."
+        },
+        "yearsExperience": {
+          "type": "integer",
+          "description": "Driver years of experience."
+        },
+        "onTimePct": {
+          "type": "integer",
+          "description": "On-time performance percentage (0-100)."
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether the driver account is currently active."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned update timestamp."
+        }
+      },
+      "required": ["uid", "name", "busPlate", "active", "createdAt", "updatedAt"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Private user profile containing PII and assigned portal role.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "email": {
+          "type": "string",
+          "description": "Authenticated user email."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User full display name."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["PARENT", "DRIVER", "ADMIN"],
+          "description": "Assigned Safiri portal role."
+        },
+        "phone": {
+          "type": "string",
+          "description": "Optional contact phone number."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "email", "displayName", "role", "createdAt", "updatedAt"]
+    },
+    "Student": {
+      "title": "Enrolled Student",
+      "description": "Student record synced across parent, driver, and school administrator portals.",
+      "type": "object",
+      "properties": {
+        "parentUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the primary parent."
+        },
+        "name": {
+          "type": "string",
+          "description": "Student full name."
+        },
+        "initials": {
+          "type": "string",
+          "description": "Student display initials."
+        },
+        "parentName": {
+          "type": "string",
+          "description": "Parent full name."
+        },
+        "parentEmail": {
+          "type": "string",
+          "description": "Parent contact email."
+        },
+        "parentPhone": {
+          "type": "string",
+          "description": "Parent contact phone."
+        },
+        "assignedBusPlate": {
+          "type": "string",
+          "description": "Assigned school bus plate."
+        },
+        "assignedDriverName": {
+          "type": "string",
+          "description": "Assigned bus driver name."
+        },
+        "pickupStop": {
+          "type": "string",
+          "description": "Morning pickup stop."
+        },
+        "dropoffStop": {
+          "type": "string",
+          "description": "Destination school drop-off stop."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["NOT_BOARDED", "BOARDED", "DROPPED_OFF", "ABSENT"],
+          "description": "Current trip boarding status."
+        },
+        "classGrade": {
+          "type": "string",
+          "description": "Academic grade level."
+        },
+        "schoolName": {
+          "type": "string",
+          "description": "Enrolled school name."
+        },
+        "boardedTime": {
+          "type": "string",
+          "description": "Optional formatted boarding time."
+        },
+        "absentReason": {
+          "type": "string",
+          "description": "Optional reason for absence."
+        },
+        "parentNote": {
+          "type": "string",
+          "description": "Optional note from parent to driver."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "parentUid",
+        "name",
+        "initials",
+        "parentName",
+        "parentEmail",
+        "parentPhone",
+        "assignedBusPlate",
+        "assignedDriverName",
+        "pickupStop",
+        "dropoffStop",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "InterportalMessage": {
+      "title": "Interportal Dispatch Message",
+      "description": "Real-time communication message between Parent, Driver, and Admin portals.",
+      "type": "object",
+      "properties": {
+        "senderUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the sender."
+        },
+        "recipientUid": {
+          "type": "string",
+          "description": "Optional target recipient Firebase Auth UID."
+        },
+        "senderName": {
+          "type": "string",
+          "description": "Display name of sender."
+        },
+        "senderRole": {
+          "type": "string",
+          "enum": ["PARENT", "DRIVER", "ADMIN", "SYSTEM"],
+          "description": "Portal role of sender."
+        },
+        "recipientRole": {
+          "type": "string",
+          "enum": ["PARENT", "DRIVER", "ADMIN", "ALL"],
+          "description": "Target portal audience."
+        },
+        "targetBusPlate": {
+          "type": "string",
+          "description": "Bus plate associated with this message."
+        },
+        "studentName": {
+          "type": "string",
+          "description": "Optional student name referenced."
+        },
+        "content": {
+          "type": "string",
+          "description": "Message body text."
+        },
+        "displayTime": {
+          "type": "string",
+          "description": "Human-readable display timestamp label."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "senderUid",
+        "senderName",
+        "senderRole",
+        "recipientRole",
+        "targetBusPlate",
+        "content",
+        "createdAt"
+      ]
+    },
+    "BusAlert": {
+      "title": "Fleet & Emergency Alert",
+      "description": "Operational route alerts and emergency SOS broadcasts.",
+      "type": "object",
+      "properties": {
+        "authorUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the driver or admin who created the alert."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short alert headline."
+        },
+        "detail": {
+          "type": "string",
+          "description": "Alert description."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["DANGER", "WARNING", "INFO"],
+          "description": "Severity level."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Ongoing", "Upcoming", "Scheduled", "Resolved"],
+          "description": "Lifecycle status."
+        },
+        "busPlate": {
+          "type": "string",
+          "description": "Optional affected bus plate."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["authorUid", "title", "detail", "severity", "status", "createdAt", "updatedAt"]
+    },
+    "CommunityIncident": {
+      "title": "Community Traffic Incident",
+      "description": "User-reported road, traffic, or weather incident with upvoting.",
+      "type": "object",
+      "properties": {
+        "reporterUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the user who reported the incident."
+        },
+        "title": {
+          "type": "string",
+          "description": "Incident headline."
+        },
+        "location": {
+          "type": "string",
+          "description": "Road or junction location."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["Traffic", "Weather", "Roadwork", "Other"],
+          "description": "Incident classification."
+        },
+        "votes": {
+          "type": "integer",
+          "description": "Upvote counter."
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Whether the incident is currently active."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned timestamp (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["reporterUid", "title", "location", "category", "votes", "isActive", "createdAt", "updatedAt"]
+    },
+    "FleetBus": {
+      "title": "Fleet Bus Telemetry",
+      "description": "Real-time bus occupancy, status, and GPS coordinates.",
+      "type": "object",
+      "properties": {
+        "plate": {
+          "type": "string",
+          "description": "Vehicle registration plate."
+        },
+        "driverUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the assigned driver."
+        },
+        "driverName": {
+          "type": "string",
+          "description": "Assigned driver name."
+        },
+        "studentCount": {
+          "type": "integer",
+          "description": "Total assigned students."
+        },
+        "occupancyCount": {
+          "type": "integer",
+          "description": "Currently boarded students."
+        },
+        "capacity": {
+          "type": "integer",
+          "description": "Seating capacity."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["On Time", "Delayed", "Active", "No Driver"],
+          "description": "Operational bus status."
+        },
+        "speed": {
+          "type": "integer",
+          "description": "Current speed in km/h."
+        },
+        "lat": {
+          "type": "number",
+          "description": "Latitude coordinate."
+        },
+        "lng": {
+          "type": "number",
+          "description": "Longitude coordinate."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned timestamp (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["plate", "driverUid", "driverName", "studentCount", "occupancyCount", "capacity", "status", "speed", "lat", "lng", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "RBAC admin allowlist checked by Firestore security rules."
+    },
+    "/drivers/{uid}": {
+      "schema": { "$ref": "#/entities/DriverRecord" },
+      "description": "Admin-provisioned driver roster checked by Firestore security rules."
+    },
+    "/users/{uid}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Authenticated user profiles isolated per owner UID and admin."
+    },
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/Student" },
+      "description": "Enrolled student records and real-time boarding state."
+    },
+    "/interportal_messages/{messageId}": {
+      "schema": { "$ref": "#/entities/InterportalMessage" },
+      "description": "Append-only cross-portal messages."
+    },
+    "/alerts/{alertId}": {
+      "schema": { "$ref": "#/entities/BusAlert" },
+      "description": "Operational route alerts and SOS broadcasts."
+    },
+    "/community_incidents/{incidentId}": {
+      "schema": { "$ref": "#/entities/CommunityIncident" },
+      "description": "Community-reported traffic and roadwork incidents."
+    },
+    "/fleet_buses/{busId}": {
+      "schema": { "$ref": "#/entities/FleetBus" },
+      "description": "Live fleet bus state and telemetry."
+    }
+  }
+}

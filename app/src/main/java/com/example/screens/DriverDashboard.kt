@@ -1,7 +1,11 @@
 package com.example.screens
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.components.*
+import com.example.location.DriverLocationTracker
 import com.example.models.InterportalMessage
 import com.example.models.StudentStatus
 import com.example.ui.theme.*
@@ -104,6 +109,7 @@ fun DriverDashboard(
 // ==========================================
 @Composable
 fun DriverRouteTab(viewModel: AppViewModel) {
+    val context = LocalContext.current
     val progress by viewModel.progress.collectAsState()
     val etaMinutes by viewModel.etaMinutes.collectAsState()
     val stops by viewModel.routeStops.collectAsState()
@@ -112,6 +118,29 @@ fun DriverRouteTab(viewModel: AppViewModel) {
     val kilimaniComplete by viewModel.kilimaniComplete.collectAsState()
     val driverNextStopName by viewModel.driverNextStopName.collectAsState()
     val currentUserName by viewModel.currentUserName.collectAsState()
+    val mapsApiKey by viewModel.mapsApiKey.collectAsState()
+
+    val isLiveGpsActive by viewModel.isLiveGpsTrackingActive.collectAsState()
+    val driverGpsLat by viewModel.driverGpsLat.collectAsState()
+    val driverGpsLng by viewModel.driverGpsLng.collectAsState()
+    val driverSpeedKmh by viewModel.driverSpeedKmh.collectAsState()
+    val telemetrySourceLabel by viewModel.telemetrySourceLabel.collectAsState()
+    val locationErrorNotice by viewModel.locationErrorNotice.collectAsState()
+
+    var locationPermissionDenied by remember { mutableStateOf(false) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val fineGranted = results[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarseGranted = results[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (fineGranted || coarseGranted) {
+            locationPermissionDenied = false
+            viewModel.startDriverGpsTracking()
+        } else {
+            locationPermissionDenied = true
+        }
+    }
 
     ScrollView(
         modifier = Modifier.fillMaxSize(),
@@ -130,6 +159,7 @@ fun DriverRouteTab(viewModel: AppViewModel) {
                 statusText = "Active Route",
                 etaMinutes = etaMinutes,
                 stops = stops,
+                customApiKey = mapsApiKey,
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -209,8 +239,8 @@ fun DriverRouteTab(viewModel: AppViewModel) {
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "HQ has received your GPS coordinates. SMS Fallback activated via Africa's Talking.",
-                            color = Color.White.copy(alpha = 0.8f),
+                            text = "HQ & active fleet monitors alerted. Call 999 or School Dispatch for urgent voice assistance.",
+                            color = Color.White.copy(alpha = 0.85f),
                             fontSize = 11.sp,
                             lineHeight = 14.sp
                         )
@@ -227,6 +257,97 @@ fun DriverRouteTab(viewModel: AppViewModel) {
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+
+        // Live GPS Telemetry Control Card
+        SafiriCard(testTag = "driver_gps_telemetry_card") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isLiveGpsActive) Icons.Filled.GpsFixed else Icons.Filled.GpsNotFixed,
+                            contentDescription = "GPS telemetry status",
+                            tint = if (isLiveGpsActive) GreenAccent else AmberAccent,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        SafiriTag(
+                            text = telemetrySourceLabel,
+                            color = if (isLiveGpsActive) GreenAccent else AmberAccent
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = if (isLiveGpsActive) {
+                            "Lat ${"%.5f".format(driverGpsLat)}, Lng ${"%.5f".format(driverGpsLng)} • $driverSpeedKmh km/h"
+                        } else {
+                            "Using route schedule estimate until device GPS is enabled"
+                        },
+                        color = TextSecondaryColor,
+                        fontSize = 11.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Button(
+                    onClick = {
+                        if (isLiveGpsActive) {
+                            viewModel.stopDriverGpsTracking()
+                        } else if (DriverLocationTracker.hasLocationPermission(context)) {
+                            locationPermissionDenied = false
+                            viewModel.startDriverGpsTracking()
+                        } else {
+                            val requested = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                                    Manifest.permission.POST_NOTIFICATIONS
+                                )
+                            } else {
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            }
+                            permissionLauncher.launch(requested)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isLiveGpsActive) Surface3Color else GreenAccent,
+                        contentColor = if (isLiveGpsActive) TextPrimaryColor else BackgroundColor
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("driver_live_gps_btn")
+                ) {
+                    Text(
+                        text = if (isLiveGpsActive) "Stop GPS" else "Enable GPS",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            if (locationPermissionDenied || locationErrorNotice != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = locationErrorNotice
+                        ?: "Location permission was denied. Grant Fine or Coarse Location to stream live shuttle coordinates.",
+                    color = AmberAccent,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Bottom sheet contents
         SafiriCard(testTag = "driver_metrics_card") {
