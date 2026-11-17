@@ -17,6 +17,7 @@ object SafiriNotificationManager {
 
     const val CHANNEL_BOARDING = "safiri_boarding_alerts"
     const val CHANNEL_EMERGENCY = "safiri_emergency_sos"
+    const val CHANNEL_LOCATION_TRACKING = "safiri_location_tracking"
     private const val TAG = "SafiriNotifications"
 
     fun ensureChannels(context: Context) {
@@ -42,8 +43,18 @@ object SafiriNotificationManager {
                     enableVibration(true)
                 }
 
+                val locationChannel = NotificationChannel(
+                    CHANNEL_LOCATION_TRACKING,
+                    "Live Driver Location",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Shown while a driver shares live bus location."
+                    setShowBadge(false)
+                }
+
                 manager.createNotificationChannel(boardingChannel)
                 manager.createNotificationChannel(emergencyChannel)
+                manager.createNotificationChannel(locationChannel)
             } catch (e: Exception) {
                 Log.w(TAG, "Unable to initialize notification channels: ${e.message}")
             }

@@ -33,6 +33,28 @@ data class FirestoreUserProfile(
 }
 
 @IgnoreExtraProperties
+data class FirestoreSubscription(
+    @DocumentId val id: String = "",
+    val status: String = "INACTIVE",
+    val planName: String = "Safiri Fleet Enterprise Tier",
+    val monthlyAmountKsh: Long = 15000L,
+    val currentPeriodEnd: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+@IgnoreExtraProperties
+data class FirestoreSubscriptionInvoice(
+    @DocumentId val id: String = "",
+    val amountKsh: Long = 0L,
+    val currency: String = "KES",
+    val status: String = "PENDING",
+    val paymentMethod: String = "M-Pesa STK",
+    val receiptNumber: String? = null,
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val paidAt: Timestamp? = null
+)
+
+@IgnoreExtraProperties
 data class FirestoreStudent(
     @DocumentId val id: String = "",
     val parentUid: String = "",
@@ -92,7 +114,8 @@ data class FirestoreInterportalMessage(
     val studentName: String? = null,
     val content: String = "",
     val displayTime: String? = null,
-    @ServerTimestamp val createdAt: Timestamp? = null
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    val studentId: String? = null
 ) {
     fun toCreateMap(): Map<String, Any> {
         val raw: Map<String, Any?> = mapOf(
@@ -105,7 +128,8 @@ data class FirestoreInterportalMessage(
             "studentName" to studentName,
             "content" to content,
             "displayTime" to displayTime,
-            "createdAt" to FieldValue.serverTimestamp()
+            "createdAt" to FieldValue.serverTimestamp(),
+            "studentId" to studentId
         )
         @Suppress("UNCHECKED_CAST")
         return raw.filterValues { it != null } as Map<String, Any>

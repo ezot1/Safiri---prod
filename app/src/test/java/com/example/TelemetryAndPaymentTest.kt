@@ -21,6 +21,33 @@ import org.robolectric.shadows.ShadowLooper
 class TelemetryAndPaymentTest {
 
     @Test
+    fun `demo fixtures are only loaded in debug builds`() {
+        val app = ApplicationProvider.getApplicationContext<Context>() as Application
+        val viewModel = AppViewModel(app)
+
+        if (BuildConfig.DEBUG) {
+            assertTrue(viewModel.students.value.isNotEmpty())
+            assertTrue(viewModel.activeAlerts.value.isNotEmpty())
+            assertTrue(viewModel.adminFleetBuses.value.isNotEmpty())
+        } else {
+            assertTrue(viewModel.students.value.isEmpty())
+            assertTrue(viewModel.activeAlerts.value.isEmpty())
+            assertTrue(viewModel.adminFleetBuses.value.isEmpty())
+            assertTrue(viewModel.transitLines.value.isEmpty())
+            assertTrue(viewModel.invoiceHistory.value.isEmpty())
+            assertEquals(SubscriptionStatus.INACTIVE, viewModel.subscriptionStatus.value)
+
+            viewModel.updateLiveDriverLocation(lat = -1.2905, lng = 36.77875, speedMetersPerSec = 10f)
+            assertEquals(0f, viewModel.progress.value, 0f)
+            assertEquals(0, viewModel.etaMinutes.value)
+
+            viewModel.triggerSOS()
+            assertFalse(viewModel.sosActive.value)
+            assertTrue(viewModel.rateLimitNotice.value?.contains("bus assignment") == true)
+        }
+    }
+
+    @Test
     fun `route progress computes bounds along Nairobi shuttle corridor`() {
         val startProgress = DriverLocationTracker.computeRouteProgress(-1.2825, 36.7450)
         val endProgress = DriverLocationTracker.computeRouteProgress(-1.2985, 36.8125)
@@ -48,35 +75,18 @@ class TelemetryAndPaymentTest {
     }
 
     @Test
-    fun `paySubscriptionInvoice rejects invalid phone or amount`() {
+    fun `paySubscriptionInvoice validates phone and does not record local invoices`() {
         val app = ApplicationProvider.getApplicationContext<Context>() as Application
         val viewModel = AppViewModel(app)
         val initialCount = viewModel.invoiceHistory.value.size
 
-        viewModel.paySubscriptionInvoice("12345", "15000")
+        viewModel.paySubscriptionInvoice("12345")
         assertTrue(viewModel.subscriptionToast.value?.contains("valid Kenyan M-Pesa number") == true)
         assertEquals(initialCount, viewModel.invoiceHistory.value.size)
 
-        viewModel.paySubscriptionInvoice("0712345678", "0")
-        assertTrue(viewModel.subscriptionToast.value?.contains("greater than 0 KES") == true)
+        viewModel.paySubscriptionInvoice("0712345678")
+        assertTrue(viewModel.subscriptionToast.value?.contains("authorized school administrator") == true)
         assertEquals(initialCount, viewModel.invoiceHistory.value.size)
-    }
-
-    @Test
-    fun `paySubscriptionInvoice records sandbox preview instead of fake paid invoice`() {
-        val app = ApplicationProvider.getApplicationContext<Context>() as Application
-        val viewModel = AppViewModel(app)
-        viewModel.setSubscriptionStatus(SubscriptionStatus.INACTIVE)
-        val initialCount = viewModel.invoiceHistory.value.size
-
-        viewModel.paySubscriptionInvoice("+254712345678", "15000")
-        ShadowLooper.idleMainLooper(1000, java.util.concurrent.TimeUnit.MILLISECONDS)
-
-        assertEquals(initialCount + 1, viewModel.invoiceHistory.value.size)
-        val newest = viewModel.invoiceHistory.value.first()
-        assertEquals("SANDBOX_PREVIEW", newest.status)
-        assertEquals(SubscriptionStatus.INACTIVE, viewModel.subscriptionStatus.value)
-        assertTrue(viewModel.subscriptionToast.value?.contains("Sandbox preview") == true)
     }
 
     @Test

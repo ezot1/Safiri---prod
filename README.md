@@ -79,11 +79,30 @@ For production deployment:
 1. Create a Firebase project in the [Firebase Console](https://console.firebase.google.com/).
 2. Add an Android app with package name: `com.aistudio.safiri.axrtqp`.
 3. Download `google-services.json` and place it in the `app/` directory (see `app/google-services.json.example`).
-4. Enable **Firebase Auth** (Email/Password & Google Sign-In) and **Cloud Firestore**.
-5. Deploy Firestore security rules:
+4. Enable **Firebase Auth** (Email/Password & Google Sign-In) and **Cloud Firestore**. Create the named Firestore database whose ID matches `app/src/main/res/values/firebase_applet_config.xml`; the alert function is configured for that same database.
+   Register the Android app in Firebase App Check with the reCAPTCHA Enterprise provider, and make sure the release `recaptcha_site_key` resource matches that Firebase project. Register debug tokens separately for development; payment callables enforce App Check.
+5. Select the Firebase project and configure Daraja credentials using Firebase Secret Manager; do not put credentials in the app or a checked-in file:
    ```bash
-   firebase deploy --only firestore:rules
+   firebase use YOUR_FIREBASE_PROJECT_ID
+   firebase functions:secrets:set MPESA_CONSUMER_KEY
+   firebase functions:secrets:set MPESA_CONSUMER_SECRET
+   firebase functions:secrets:set MPESA_SHORTCODE
+   firebase functions:secrets:set MPESA_PASSKEY
    ```
+6. Copy `functions/.env.example` to `functions/.env.YOUR_FIREBASE_PROJECT_ID`. Keep `MPESA_ENVIRONMENT=sandbox` until the Safaricom production shortcode and Daraja app are approved; replace the callback URL with the HTTPS endpoint for this Firebase project.
+7. Deploy Firestore security rules and Cloud Functions:
+   ```bash
+   firebase deploy --only firestore:rules,functions
+   ```
+   Cloud Functions deployment requires the Blaze plan, Node.js 22 support, and the Cloud Functions, Cloud Build, Artifact Registry, and Cloud Scheduler APIs. The 2nd-generation `notifyOnActiveAlert` function sends a generic push when an active alert is created and removes tokens that FCM reports as invalid.
+
+   The payment callable authorizes Firebase admins, selects the monthly fee on the server (currently KES 15,000), and creates an STK request. The fee is stored on the server-owned subscription record; contract changes must be applied by a trusted backend operator. The public callback does not activate a subscription based on its payload: it queries Daraja using the stored checkout ID before marking an invoice paid. Subscription status and expiry are server-written; Firestore rules deny client changes and gate fleet operations by the stored paid-through date. The scheduled expiry job moves subscriptions into payment-due/inactive states. If a Daraja request times out after submission, the invoice is marked `INITIATION_UNKNOWN` and another payment is locked to prevent duplicate charges. Do not retry it: reconcile the invoice ID with Daraja transaction records first. Only after confirming no charge occurred, a trusted Firebase operator may mark the invoice `FAILED` and remove `pendingPaymentId` and `pendingPaymentStartedAt` from `subscriptions/main` using trusted backend tooling; never manually mark an invoice paid.
+
+   This billing record is global (`subscriptions/main`), matching the app's current single-fleet Firebase-project model. Do not host multiple schools in one Firebase project until organization IDs and per-school billing are added.
+
+Drivers start live sharing from the driver dashboard while Safiri is visible and location permission is granted. Android shows an ongoing low-priority notification while the foreground location service runs; Android 13+ also requires notification permission for user-visible alert delivery. Stop sharing from the dashboard or sign out to stop location reporting.
+
+Parent enrollment records the requested pickup and school but leaves the bus and driver unassigned. A school administrator reviews and approves the route and bus assignment from the student directory; parents cannot assign or change a bus themselves. Driver access to students and messages is limited to the bus plate on that driver's active `drivers/{uid}` record. This checkout has no driver-to-school assignment field, so authorization is currently bus-scoped rather than school-scoped.
 
 ---
 
@@ -164,6 +183,13 @@ Safiri includes exhaustive security rule verification covering PII bounds, role 
 ```bash
 npm install
 npm test
+```
+
+### Running Cloud Function Tests
+```bash
+npm ci --prefix functions
+npm --prefix functions run lint
+npm --prefix functions test
 ```
 
 ---

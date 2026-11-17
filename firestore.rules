@@ -34,8 +34,24 @@ service cloud.firestore {
       );
     }
 
+    function hasOperationalSubscription() {
+      return exists(/databases/$(database)/documents/subscriptions/main) &&
+             get(/databases/$(database)/documents/subscriptions/main).data.status in ['ACTIVE', 'PAYMENT_DUE'] &&
+             get(/databases/$(database)/documents/subscriptions/main).data.currentPeriodEnd is timestamp &&
+             get(/databases/$(database)/documents/subscriptions/main).data.currentPeriodEnd > request.time;
+    }
+
     function isDriver() {
       return isSignedIn() && exists(/databases/$(database)/documents/drivers/$(request.auth.uid));
+    }
+
+    function parentOwnsAssignedStudent(studentId, busPlate) {
+      return studentId is string &&
+             isValidId(studentId) &&
+             busPlate is string &&
+             exists(/databases/$(database)/documents/students/$(studentId)) &&
+             get(/databases/$(database)/documents/students/$(studentId)).data.parentUid == request.auth.uid &&
+             get(/databases/$(database)/documents/students/$(studentId)).data.assignedBusPlate == busPlate;
     }
 
     function isValidTimestamp(ts) {
@@ -44,6 +60,23 @@ service cloud.firestore {
 
     function isNonEmptyString(val, minLen, maxLen) {
       return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isActiveDriver() {
+      return isDriver() &&
+             get(/databases/$(database)/documents/drivers/$(request.auth.uid)).data.active == true &&
+             ('busPlate' in get(/databases/$(database)/documents/drivers/$(request.auth.uid)).data) &&
+             isNonEmptyString(
+               get(/databases/$(database)/documents/drivers/$(request.auth.uid)).data.busPlate,
+               2,
+               24
+             );
+    }
+
+    function isAssignedDriverToBus(busPlate) {
+      return isActiveDriver() &&
+             busPlate is string &&
+             get(/databases/$(database)/documents/drivers/$(request.auth.uid)).data.busPlate == busPlate;
     }
 
     // --- ENTITY VALIDATION BLUEPRINTS ---
@@ -74,8 +107,8 @@ service cloud.firestore {
              isNonEmptyString(data.parentName, 1, 100) &&
              isNonEmptyString(data.parentEmail, 3, 160) &&
              isNonEmptyString(data.parentPhone, 3, 30) &&
-             isNonEmptyString(data.assignedBusPlate, 2, 24) &&
-             isNonEmptyString(data.assignedDriverName, 1, 100) &&
+             (data.assignedBusPlate == '' || isNonEmptyString(data.assignedBusPlate, 2, 24)) &&
+             (data.assignedDriverName == '' || isNonEmptyString(data.assignedDriverName, 1, 100)) &&
              isNonEmptyString(data.pickupStop, 1, 120) &&
              isNonEmptyString(data.dropoffStop, 1, 120) &&
              data.status in ['NOT_BOARDED', 'BOARDED', 'DROPPED_OFF', 'ABSENT'] &&
@@ -94,6 +127,7 @@ service cloud.firestore {
              data.recipientRole in ['PARENT', 'DRIVER', 'ADMIN', 'ALL'] &&
              isNonEmptyString(data.targetBusPlate, 1, 24) &&
              isNonEmptyString(data.content, 1, 1000) &&
+             (!('studentId' in data) || (data.studentId is string && data.studentId.size() <= 128)) &&
              (!('recipientUid' in data) || (data.recipientUid is string && data.recipientUid.size() <= 128)) &&
              (!('studentName' in data) || (data.studentName is string && data.studentName.size() <= 100)) &&
              (!('displayTime' in data) || (data.displayTime is string && data.displayTime.size() <= 40)) &&
@@ -181,12 +215,40 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isValidId(uid) && (request.auth.uid == uid || isAdmin());
     }
 
+    match /users/{uid}/device_tokens/{tokenId} {
+      allow read: if false;
+      allow create, update: if isSignedIn() &&
+                               isValidId(uid) &&
+                               isValidId(tokenId) &&
+                               request.auth.uid == uid &&
+                               incoming().keys().hasOnly(['token', 'platform', 'updatedAt']) &&
+                               incoming().keys().hasAll(['token', 'platform', 'updatedAt']) &&
+                               isNonEmptyString(incoming().token, 1, 4096) &&
+                               incoming().platform == 'android' &&
+                               isValidTimestamp(incoming().updatedAt);
+      allow delete: if isSignedIn() && isValidId(uid) && isValidId(tokenId) && request.auth.uid == uid;
+    }
+
+    match /subscriptions/{subscriptionId} {
+      allow get: if isSignedIn() && subscriptionId == 'main';
+      allow list, create, update, delete: if false;
+
+      match /invoices/{invoiceId} {
+        allow get, list: if isSignedIn() && subscriptionId == 'main' && isAdmin();
+        allow create, update, delete: if false;
+      }
+    }
+
     match /students/{studentId} {
-      allow get: if isSignedIn() && isValidId(studentId) &&
-                    (existing().parentUid == request.auth.uid || isAdmin() || isDriver());
-      allow list: if isSignedIn() &&
-                     (resource.data.parentUid == request.auth.uid || isAdmin() || isDriver());
-      allow create: if isSignedIn() && isValidId(studentId) && isValidStudent(incoming()) &&
+      allow get: if isSignedIn() && hasOperationalSubscription() && isValidId(studentId) &&
+                    (existing().parentUid == request.auth.uid ||
+                     isAdmin() ||
+                     isAssignedDriverToBus(existing().assignedBusPlate));
+      allow list: if isSignedIn() && hasOperationalSubscription() &&
+                     (resource.data.parentUid == request.auth.uid ||
+                      isAdmin() ||
+                      isAssignedDriverToBus(resource.data.assignedBusPlate));
+      allow create: if isSignedIn() && hasOperationalSubscription() && isValidId(studentId) && isValidStudent(incoming()) &&
                        incoming().keys().hasAll([
                          'parentUid', 'name', 'initials', 'parentName', 'parentEmail',
                          'parentPhone', 'assignedBusPlate', 'assignedDriverName',
@@ -201,62 +263,73 @@ service cloud.firestore {
                        isValidTimestamp(incoming().createdAt) &&
                        (
                          isAdmin() ||
-                         (incoming().parentUid == request.auth.uid && incoming().status == 'NOT_BOARDED')
+                         (incoming().parentUid == request.auth.uid &&
+                          incoming().status == 'NOT_BOARDED' &&
+                          incoming().assignedBusPlate == '' &&
+                          incoming().assignedDriverName == '')
                        );
-      allow update: if isSignedIn() && isValidId(studentId) && isValidStudent(incoming()) &&
+      allow update: if isSignedIn() && hasOperationalSubscription() && isValidId(studentId) && isValidStudent(incoming()) &&
                        incoming().createdAt == existing().createdAt &&
                        (
                          isAdmin() ||
                          (existing().parentUid == request.auth.uid &&
                           incoming().parentUid == existing().parentUid &&
                           incoming().status in ['NOT_BOARDED', 'ABSENT'] &&
-                          incoming().diff(existing()).affectedKeys().hasOnly(['parentNote', 'pickupStop', 'status', 'absentReason', 'updatedAt'])) ||
-                         (isDriver() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['parentNote', 'pickupStop', 'status', 'absentReason', 'updatedAt']) &&
+                          (!incoming().diff(existing()).affectedKeys().hasAny(['pickupStop']) ||
+                           existing().assignedBusPlate == '')) ||
+                         (isAssignedDriverToBus(existing().assignedBusPlate) &&
                           incoming().parentUid == existing().parentUid &&
                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'boardedTime', 'updatedAt']))
                        );
-      allow delete: if isSignedIn() && isValidId(studentId) && isAdmin();
+      allow delete: if isSignedIn() && hasOperationalSubscription() && isValidId(studentId) && isAdmin();
     }
 
     match /interportal_messages/{messageId} {
-      allow get: if isSignedIn() && isValidId(messageId) &&
-                    (existing().senderUid == request.auth.uid ||
-                     existing().recipientUid == request.auth.uid ||
-                     isDriver() || isAdmin());
-      allow list: if isSignedIn() &&
-                     (resource.data.senderUid == request.auth.uid ||
-                      resource.data.recipientUid == request.auth.uid ||
-                      isDriver() || isAdmin());
-      allow create: if isSignedIn() && isValidId(messageId) && isValidInterportalMessage(incoming()) &&
+      allow get: if isSignedIn() && hasOperationalSubscription() && isValidId(messageId) &&
+                    (isAdmin() ||
+                     isAssignedDriverToBus(existing().targetBusPlate) ||
+                     existing().senderUid == request.auth.uid ||
+                     (existing().recipientUid == request.auth.uid && !isDriver()));
+      allow list: if isSignedIn() && hasOperationalSubscription() &&
+                     (isAdmin() ||
+                      isAssignedDriverToBus(resource.data.targetBusPlate) ||
+                      resource.data.senderUid == request.auth.uid ||
+                      (resource.data.recipientUid == request.auth.uid && !isDriver()));
+      allow create: if isSignedIn() && hasOperationalSubscription() && isValidId(messageId) && isValidInterportalMessage(incoming()) &&
                        incoming().senderUid == request.auth.uid &&
                        incoming().keys().hasAll(['senderUid', 'senderName', 'senderRole', 'recipientRole', 'targetBusPlate', 'content', 'createdAt']) &&
-                       incoming().keys().hasOnly(['senderUid', 'recipientUid', 'senderName', 'senderRole', 'recipientRole', 'targetBusPlate', 'studentName', 'content', 'displayTime', 'createdAt']) &&
+                       incoming().keys().hasOnly(['senderUid', 'recipientUid', 'senderName', 'senderRole', 'recipientRole', 'targetBusPlate', 'studentId', 'studentName', 'content', 'displayTime', 'createdAt']) &&
                        (
-                         incoming().senderRole == 'PARENT' ||
-                         (incoming().senderRole == 'DRIVER' && isDriver()) ||
+                         (incoming().senderRole == 'PARENT' &&
+                          'studentId' in incoming() &&
+                          parentOwnsAssignedStudent(incoming().studentId, incoming().targetBusPlate)) ||
+                         (incoming().senderRole == 'DRIVER' &&
+                          isAssignedDriverToBus(incoming().targetBusPlate)) ||
                          (incoming().senderRole == 'ADMIN' && isAdmin()) ||
-                         (incoming().senderRole == 'SYSTEM' && (isDriver() || isAdmin()))
+                         (incoming().senderRole == 'SYSTEM' &&
+                          (isAdmin() || isAssignedDriverToBus(incoming().targetBusPlate)))
                        );
       allow update: if false;
-      allow delete: if isSignedIn() && isValidId(messageId) && isAdmin();
+      allow delete: if isSignedIn() && hasOperationalSubscription() && isValidId(messageId) && isAdmin();
     }
 
     match /alerts/{alertId} {
-      allow get: if isSignedIn() && isValidId(alertId) &&
+      allow get: if isSignedIn() && hasOperationalSubscription() && isValidId(alertId) &&
                     (existing().authorUid == request.auth.uid ||
                      existing().status in ['Ongoing', 'Upcoming', 'Scheduled'] ||
                      isDriver() || isAdmin());
-      allow list: if isSignedIn() &&
+      allow list: if isSignedIn() && hasOperationalSubscription() &&
                      (resource.data.status in ['Ongoing', 'Upcoming', 'Scheduled'] ||
                       resource.data.authorUid == request.auth.uid ||
                       isDriver() || isAdmin());
-      allow create: if isSignedIn() && isValidId(alertId) && isValidBusAlert(incoming()) &&
+      allow create: if isSignedIn() && hasOperationalSubscription() && isValidId(alertId) && isValidBusAlert(incoming()) &&
                        incoming().authorUid == request.auth.uid &&
                        incoming().keys().hasAll(['authorUid', 'title', 'detail', 'severity', 'status', 'createdAt', 'updatedAt']) &&
                        incoming().keys().hasOnly(['authorUid', 'title', 'detail', 'severity', 'status', 'busPlate', 'createdAt', 'updatedAt']) &&
                        isValidTimestamp(incoming().createdAt) &&
                        (isAdmin() || isDriver());
-      allow update: if isSignedIn() && isValidId(alertId) && isValidBusAlert(incoming()) &&
+      allow update: if isSignedIn() && hasOperationalSubscription() && isValidId(alertId) && isValidBusAlert(incoming()) &&
                        incoming().authorUid == existing().authorUid &&
                        incoming().createdAt == existing().createdAt &&
                        existing().status != 'Resolved' &&
@@ -265,22 +338,22 @@ service cloud.firestore {
                          (isDriver() && existing().authorUid == request.auth.uid &&
                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
                        );
-      allow delete: if isSignedIn() && isValidId(alertId) && isAdmin();
+      allow delete: if isSignedIn() && hasOperationalSubscription() && isValidId(alertId) && isAdmin();
     }
 
     match /community_incidents/{incidentId} {
-      allow get: if isSignedIn() && isValidId(incidentId) &&
+      allow get: if isSignedIn() && hasOperationalSubscription() && isValidId(incidentId) &&
                     (existing().isActive == true || existing().reporterUid == request.auth.uid || isAdmin() || isDriver());
-      allow list: if isSignedIn() &&
+      allow list: if isSignedIn() && hasOperationalSubscription() &&
                      (resource.data.isActive == true || resource.data.reporterUid == request.auth.uid || isAdmin() || isDriver());
-      allow create: if isSignedIn() && isValidId(incidentId) && isValidCommunityIncident(incoming()) &&
+      allow create: if isSignedIn() && hasOperationalSubscription() && isValidId(incidentId) && isValidCommunityIncident(incoming()) &&
                        incoming().reporterUid == request.auth.uid &&
                        incoming().isActive == true &&
                        incoming().votes == 1 &&
                        incoming().keys().hasAll(['reporterUid', 'title', 'location', 'category', 'votes', 'isActive', 'createdAt', 'updatedAt']) &&
                        incoming().keys().hasOnly(['reporterUid', 'title', 'location', 'category', 'votes', 'isActive', 'createdAt', 'updatedAt']) &&
                        isValidTimestamp(incoming().createdAt);
-      allow update: if isSignedIn() && isValidId(incidentId) && isValidCommunityIncident(incoming()) &&
+      allow update: if isSignedIn() && hasOperationalSubscription() && isValidId(incidentId) && isValidCommunityIncident(incoming()) &&
                        incoming().reporterUid == existing().reporterUid &&
                        incoming().createdAt == existing().createdAt &&
                        existing().isActive == true &&
@@ -289,30 +362,30 @@ service cloud.firestore {
                          (incoming().diff(existing()).affectedKeys().hasOnly(['votes', 'updatedAt']) &&
                           (incoming().votes == existing().votes + 1 || incoming().votes == existing().votes - 1))
                        );
-      allow delete: if isSignedIn() && isValidId(incidentId) &&
+      allow delete: if isSignedIn() && hasOperationalSubscription() && isValidId(incidentId) &&
                        (existing().reporterUid == request.auth.uid || isAdmin());
     }
 
     match /fleet_buses/{busId} {
-      allow get: if isSignedIn() && isValidId(busId) &&
+      allow get: if isSignedIn() && hasOperationalSubscription() && isValidId(busId) &&
                     (existing().status in ['On Time', 'Delayed', 'Active'] ||
                      existing().driverUid == request.auth.uid ||
                      isDriver() || isAdmin());
-      allow list: if isSignedIn() &&
+      allow list: if isSignedIn() && hasOperationalSubscription() &&
                      (resource.data.status in ['On Time', 'Delayed', 'Active'] ||
                       resource.data.driverUid == request.auth.uid ||
                       isDriver() || isAdmin());
-      allow create: if isSignedIn() && isValidId(busId) && isValidFleetBus(incoming()) &&
+      allow create: if isSignedIn() && hasOperationalSubscription() && isValidId(busId) && isValidFleetBus(incoming()) &&
                        incoming().keys().hasAll(['plate', 'driverUid', 'driverName', 'studentCount', 'occupancyCount', 'capacity', 'status', 'speed', 'lat', 'lng', 'updatedAt']) &&
                        incoming().keys().hasOnly(['plate', 'driverUid', 'driverName', 'studentCount', 'occupancyCount', 'capacity', 'status', 'speed', 'lat', 'lng', 'updatedAt']) &&
                        isAdmin();
-      allow update: if isSignedIn() && isValidId(busId) && isValidFleetBus(incoming()) &&
+      allow update: if isSignedIn() && hasOperationalSubscription() && isValidId(busId) && isValidFleetBus(incoming()) &&
                        (
                          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['plate', 'driverUid', 'driverName', 'studentCount', 'occupancyCount', 'capacity', 'status', 'speed', 'lat', 'lng', 'updatedAt'])) ||
                          (isDriver() && existing().driverUid == request.auth.uid &&
                           incoming().diff(existing()).affectedKeys().hasOnly(['occupancyCount', 'status', 'speed', 'lat', 'lng', 'updatedAt']))
                        );
-      allow delete: if isSignedIn() && isValidId(busId) && isAdmin();
+      allow delete: if isSignedIn() && hasOperationalSubscription() && isValidId(busId) && isAdmin();
     }
   }
 }

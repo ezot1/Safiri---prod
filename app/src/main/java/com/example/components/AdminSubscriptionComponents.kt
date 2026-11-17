@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.BuildConfig
 import com.example.models.SubscriptionStatus
+import com.example.models.UserRole
 import com.example.ui.theme.*
 import com.example.viewmodel.AppViewModel
 
@@ -41,6 +42,7 @@ fun AppSubscriptionInactiveScreen(
     val paybillAcc by viewModel.paybillAccount.collectAsState()
     val isProcessing by viewModel.paymentProcessing.collectAsState()
     val subscriptionToast by viewModel.subscriptionToast.collectAsState()
+    val currentRole by viewModel.currentRole.collectAsState()
     
     var showPaySheet by remember { mutableStateOf(false) }
     var phoneNumber by remember { mutableStateOf("0712345678") }
@@ -90,7 +92,7 @@ fun AppSubscriptionInactiveScreen(
             Spacer(modifier = Modifier.height(6.dp))
 
             Text(
-                text = "St. Mary's Academy Fleet Account #SAF-8832",
+                text = "No school fleet account is linked yet.",
                 color = TextSecondaryColor,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -160,27 +162,36 @@ fun AppSubscriptionInactiveScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             // Action: Pay Now Button
-            Button(
-                onClick = { showPaySheet = true },
-                colors = ButtonDefaults.buttonColors(containerColor = GreenAccent),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-                    .testTag("inactive_pay_now_btn"),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Payment,
-                    contentDescription = "Pay",
-                    tint = BackgroundColor,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+            if (currentRole == UserRole.ADMIN) {
+                Button(
+                    onClick = { showPaySheet = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = GreenAccent),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .testTag("inactive_pay_now_btn"),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Payment,
+                        contentDescription = "Pay",
+                        tint = BackgroundColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Pay & Reactivate",
+                        color = BackgroundColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+            } else {
                 Text(
-                    text = "Settle Payment Now & Reactivate",
-                    color = BackgroundColor,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
+                    text = "Contact your school administrator to restore fleet service.",
+                    color = TextSecondaryColor,
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center
                 )
             }
 
@@ -372,7 +383,7 @@ fun AdminSubscriptionManagementCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(text = "Paybill / Bank:", color = TextTertiaryColor, fontSize = 11.sp)
+                Text(text = "Payment method:", color = TextTertiaryColor, fontSize = 11.sp)
                 Text(text = paybillAcc, color = TextSecondaryColor, fontSize = 11.sp)
             }
         }
@@ -508,15 +519,26 @@ fun AdminSubscriptionManagementCard(
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.width(6.dp))
+                            val invoiceStatusColor = when (inv.status) {
+                                "PAID" -> GreenAccent
+                                "PENDING", "INITIATING", "INITIATION_UNKNOWN" -> AmberAccent
+                                else -> RedAccent
+                            }
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(4.dp))
-                                    .background(GreenAccent.copy(alpha = 0.15f))
+                                    .background(invoiceStatusColor.copy(alpha = 0.15f))
                                     .padding(horizontal = 4.dp, vertical = 1.dp)
                             ) {
                                 Text(
-                                    text = inv.status,
-                                    color = GreenAccent,
+                                    text = when (inv.status) {
+                                        "PAID" -> "PAID"
+                                        "PENDING" -> "AWAITING PAYMENT"
+                                        "INITIATING" -> "STARTING"
+                                        "INITIATION_UNKNOWN" -> "CHECK WITH SUPPORT"
+                                        else -> inv.status
+                                    },
+                                    color = invoiceStatusColor,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -537,10 +559,29 @@ fun AdminSubscriptionManagementCard(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "#${inv.receiptNumber}",
+                            text = if (inv.receiptNumber.startsWith("Verified")) {
+                                inv.receiptNumber
+                            } else {
+                                "#${inv.receiptNumber}"
+                            },
                             color = TextTertiaryColor,
                             fontSize = 9.sp
                         )
+                        if (inv.status == "INITIATION_UNKNOWN") {
+                            Text(
+                                text = "Do not retry; contact Safiri support.",
+                                color = AmberAccent,
+                                fontSize = 9.sp
+                            )
+                        }
+                        if (inv.status == "PENDING" || inv.status == "INITIATING") {
+                            TextButton(
+                                onClick = { viewModel.refreshSubscriptionPayment(inv.id) },
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                            ) {
+                                Text("Check status", fontSize = 10.sp, color = AccentBlue)
+                            }
+                        }
                     }
                 }
             }
@@ -595,9 +636,9 @@ fun SubscriptionPaymentModal(
     onDismiss: () -> Unit
 ) {
     var phoneNumber by remember { mutableStateOf("0712345678") }
-    var amount by remember { mutableStateOf("15000") }
     var validationError by remember { mutableStateOf<String?>(null) }
     val isProcessing by viewModel.paymentProcessing.collectAsState()
+    val agreedAmount by viewModel.agreedMonthlyAmount.collectAsState()
 
     AlertDialog(
         onDismissRequest = { if (!isProcessing) onDismiss() },
@@ -612,7 +653,7 @@ fun SubscriptionPaymentModal(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "M-PESA BILLING PREVIEW",
+                    text = "M-PESA SUBSCRIPTION PAYMENT",
                     color = TextPrimaryColor,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
@@ -633,7 +674,7 @@ fun SubscriptionPaymentModal(
                         .padding(10.dp)
                 ) {
                     Text(
-                        text = "Sandbox Preview Mode: Live M-Pesa Daraja STK charges require connecting your backend payment webhook.",
+                        text = "An STK prompt will be sent to your phone. The invoice is marked paid only after Safaricom confirms the transaction.",
                         color = TextPrimaryColor,
                         fontSize = 11.sp,
                         lineHeight = 15.sp
@@ -656,19 +697,11 @@ fun SubscriptionPaymentModal(
                         .testTag("payment_phone_input")
                 )
 
-                OutlinedTextField(
-                    value = amount,
-                    onValueChange = {
-                        amount = it
-                        validationError = null
-                    },
-                    label = { Text("Agreed Amount (KES)") },
-                    leadingIcon = {
-                        Icon(Icons.Filled.AttachMoney, contentDescription = "Amount", tint = AmberAccent)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("payment_amount_input")
+                Text(
+                    text = "Monthly charge: $agreedAmount",
+                    color = TextPrimaryColor,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
                 )
 
                 if (validationError != null) {
@@ -698,13 +731,13 @@ fun SubscriptionPaymentModal(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Recording Sandbox Preview...",
+                                text = "Starting M-Pesa prompt...",
                                 color = TextPrimaryColor,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Validating M-Pesa phone & invoice payload",
+                                text = "The charge amount is set by the billing server.",
                                 color = TextSecondaryColor,
                                 fontSize = 10.sp
                             )
@@ -718,14 +751,12 @@ fun SubscriptionPaymentModal(
                 onClick = {
                     val cleanPhone = phoneNumber.replace(" ", "").replace("-", "").trim()
                     val kenyanRegex = Regex("^(?:0[17]|\\+?254[17])\\d{8}$")
-                    val numericAmount = amount.replace(",", "").replace("KES", "", ignoreCase = true).trim().toDoubleOrNull()
                     if (!kenyanRegex.matches(cleanPhone)) {
                         validationError = "Enter a valid Kenyan M-Pesa number (07..., 01..., or +254...)."
-                    } else if (numericAmount == null || numericAmount <= 0.0) {
-                        validationError = "Enter a valid amount greater than 0 KES."
                     } else {
-                        viewModel.paySubscriptionInvoice(cleanPhone, amount)
-                        onDismiss()
+                        viewModel.paySubscriptionInvoice(cleanPhone) { submitted ->
+                            if (submitted) onDismiss()
+                        }
                     }
                 },
                 enabled = !isProcessing,
@@ -734,7 +765,7 @@ fun SubscriptionPaymentModal(
                     .heightIn(min = 48.dp)
                     .testTag("confirm_pay_btn")
             ) {
-                Text("Submit Billing Preview", color = BackgroundColor, fontWeight = FontWeight.Bold)
+                Text("Send STK Push", color = BackgroundColor, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {

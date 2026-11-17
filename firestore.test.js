@@ -13,6 +13,7 @@ const PROJECT_ID = process.env.GCP_PROJECT || "demo-no-project";
 const PARENT_ALICE = "parent_alice_1";
 const PARENT_BOB = "parent_bob_2";
 const DRIVER_ERICK = "driver_erick_1";
+const DRIVER_JOHN = "driver_john_2";
 const ADMIN_CHIEF = "admin_chief_1";
 const ADMIN_EMAIL = "info@veritasglobaladvisory.org";
 
@@ -57,6 +58,23 @@ beforeEach(async () => {
         onTimePct: 96,
         active: true,
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      await db.collection("drivers").doc(DRIVER_JOHN).set({
+        uid: DRIVER_JOHN,
+        name: "John Kiprop",
+        busPlate: "KDE 119A",
+        yearsExperience: 4,
+        onTimePct: 92,
+        active: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      await db.collection("subscriptions").doc("main").set({
+        status: "ACTIVE",
+        planName: "Safiri Fleet Enterprise Tier",
+        monthlyAmountKsh: 15000,
+        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         updatedAt: serverTimestamp(),
       });
     });
@@ -123,6 +141,177 @@ test("Parent can create own PARENT profile, but cannot self-assign ADMIN or DRIV
   );
 });
 
+test("Device messaging tokens are owner-write-only and cannot be read by clients", async () => {
+  const aliceDb = testEnv.authenticatedContext(PARENT_ALICE).firestore();
+  const aliceToken = aliceDb
+    .collection("users")
+    .doc(PARENT_ALICE)
+    .collection("device_tokens")
+    .doc("token_hash_1");
+  const tokenData = {
+    token: "fcm-device-token",
+    platform: "android",
+    updatedAt: serverTimestamp(),
+  };
+
+  await assertSucceeds(aliceToken.set(tokenData));
+  await assertFails(aliceToken.get());
+  await assertFails(
+    aliceToken.update({
+      platform: "ios",
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertSucceeds(
+    aliceToken.update({
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  const bobToken = testEnv
+    .authenticatedContext(PARENT_BOB)
+    .firestore()
+    .collection("users")
+    .doc(PARENT_ALICE)
+    .collection("device_tokens")
+    .doc("token_hash_1");
+  await assertFails(bobToken.get());
+  await assertFails(bobToken.delete());
+  await assertSucceeds(aliceToken.delete());
+});
+
+test("Inactive subscriptions gate fleet data but leave admin billing readable", async () => {
+  const alert = {
+    authorUid: ADMIN_CHIEF,
+    title: "Test alert",
+    detail: "Subscription gate test",
+    severity: "INFO",
+    status: "Ongoing",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await db.collection("subscriptions").doc("main").update({
+      status: "INACTIVE",
+    });
+    await db.collection("subscriptions").doc("main")
+      .collection("invoices").doc("invoice_1").set({
+        status: "PENDING",
+        amountKsh: 15000,
+        currency: "KES",
+      });
+    await db.collection("alerts").doc("alert_subscription_gate").set(alert);
+  });
+
+  const parentDb = testEnv.authenticatedContext(PARENT_ALICE).firestore();
+  await assertSucceeds(
+    parentDb.collection("subscriptions").doc("main").get()
+  );
+  await assertFails(
+    parentDb.collection("students").where("parentUid", "==", PARENT_ALICE).get()
+  );
+  await assertFails(
+    parentDb.collection("alerts").where("status", "==", "Ongoing").get()
+  );
+  await assertFails(
+    parentDb.collection("subscriptions").doc("main").update({
+      status: "ACTIVE",
+    })
+  );
+
+  const adminDb = testEnv.authenticatedContext(ADMIN_CHIEF).firestore();
+  await assertSucceeds(
+    adminDb.collection("subscriptions").doc("main")
+      .collection("invoices").get()
+  );
+});
+
+test("Parent can atomically register a profile and child before bus assignment", async () => {
+  const aliceDb = testEnv.authenticatedContext(PARENT_ALICE, {
+    email: "alice@safiri.co.ke",
+    email_verified: true,
+  }).firestore();
+  const batch = aliceDb.batch();
+
+  batch.set(aliceDb.collection("users").doc(PARENT_ALICE), {
+    userId: PARENT_ALICE,
+    email: "alice@safiri.co.ke",
+    displayName: "Alice Kamau",
+    role: "PARENT",
+    phone: "0712345678",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  batch.set(aliceDb.collection("students").doc("st_alice_pending"), {
+    parentUid: PARENT_ALICE,
+    name: "Brian Kamau",
+    initials: "BK",
+    parentName: "Alice Kamau",
+    parentEmail: "alice@safiri.co.ke",
+    parentPhone: "0712345678",
+    assignedBusPlate: "",
+    assignedDriverName: "",
+    pickupStop: "Kilimani Stop",
+    dropoffStop: "St. Mary's Academy",
+    status: "NOT_BOARDED",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  await assertSucceeds(batch.commit());
+
+  await assertSucceeds(
+    aliceDb.collection("students").doc("st_alice_pending").update({
+      pickupStop: "Kilimani Gate",
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  await assertFails(
+    aliceDb.collection("students").doc("st_alice_unapproved").set({
+      parentUid: PARENT_ALICE,
+      name: "Brian Kamau",
+      initials: "BK",
+      parentName: "Alice Kamau",
+      parentEmail: "alice@safiri.co.ke",
+      parentPhone: "0712345678",
+      assignedBusPlate: "KDE 732X",
+      assignedDriverName: "Erick Mwangi",
+      pickupStop: "Kilimani Stop",
+      dropoffStop: "St. Mary's Academy",
+      status: "NOT_BOARDED",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  const adminDb = testEnv.authenticatedContext(ADMIN_CHIEF).firestore();
+  await assertSucceeds(
+    adminDb.collection("students").doc("st_alice_pending").update({
+      assignedBusPlate: "KDE 732X",
+      assignedDriverName: "Erick Mwangi",
+      pickupStop: "Kilimani Gate",
+      dropoffStop: "St. Mary's Academy",
+      schoolName: "St. Mary's Academy",
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    aliceDb.collection("students").doc("st_alice_pending").update({
+      assignedBusPlate: "KDE 119A",
+      assignedDriverName: "John Kiprop",
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    aliceDb.collection("students").doc("st_alice_pending").update({
+      dropoffStop: "Another school",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
 test("Shadow update & PII isolation: Bob cannot read Alice's profile, Alice cannot inject ghost fields or escalate role", async () => {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await ctx.firestore().collection("users").doc(PARENT_ALICE).set({
@@ -181,6 +370,7 @@ test("Students: Parent can create/query own child, cannot run unfiltered list or
   const aliceDb = testEnv.authenticatedContext(PARENT_ALICE).firestore();
   const bobDb = testEnv.authenticatedContext(PARENT_BOB).firestore();
   const driverDb = testEnv.authenticatedContext(DRIVER_ERICK).firestore();
+  const secondDriverDb = testEnv.authenticatedContext(DRIVER_JOHN).firestore();
 
   await assertSucceeds(
     aliceDb.collection("students").doc("st_alice_1").set({
@@ -190,8 +380,8 @@ test("Students: Parent can create/query own child, cannot run unfiltered list or
       parentName: "Alice Kamau",
       parentEmail: "alice@safiri.co.ke",
       parentPhone: "0712345678",
-      assignedBusPlate: "KDE 732X",
-      assignedDriverName: "Erick Mwangi",
+      assignedBusPlate: "",
+      assignedDriverName: "",
       pickupStop: "Kilimani Stop",
       dropoffStop: "St. Mary's Academy",
       status: "NOT_BOARDED",
@@ -200,9 +390,50 @@ test("Students: Parent can create/query own child, cannot run unfiltered list or
     })
   );
 
+  const adminDb = testEnv.authenticatedContext(ADMIN_CHIEF).firestore();
+  await assertSucceeds(
+    adminDb.collection("students").doc("st_alice_1").update({
+      assignedBusPlate: "KDE 732X",
+      assignedDriverName: "Erick Mwangi",
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection("students").doc("st_bob_bus").set({
+      parentUid: PARENT_BOB,
+      name: "Mia Bob",
+      initials: "MB",
+      parentName: "Bob Kamau",
+      parentEmail: "bob@safiri.co.ke",
+      parentPhone: "0712345678",
+      assignedBusPlate: "KDE 119A",
+      assignedDriverName: "John Kiprop",
+      pickupStop: "Westlands Stop",
+      dropoffStop: "St. Mary's Academy",
+      status: "NOT_BOARDED",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  });
+
   // Query aligned with rule
   await assertSucceeds(
     aliceDb.collection("students").where("parentUid", "==", PARENT_ALICE).get()
+  );
+  await assertSucceeds(
+    driverDb.collection("students").where("assignedBusPlate", "==", "KDE 732X").get()
+  );
+  await assertSucceeds(
+    secondDriverDb.collection("students").where("assignedBusPlate", "==", "KDE 119A").get()
+  );
+  await assertFails(driverDb.collection("students").get());
+  await assertFails(driverDb.collection("students").doc("st_bob_bus").get());
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection("drivers").doc(DRIVER_JOHN).update({ active: false });
+  });
+  await assertFails(
+    secondDriverDb.collection("students").where("assignedBusPlate", "==", "KDE 119A").get()
   );
 
   // Unfiltered list query by parent MUST fail
@@ -224,6 +455,12 @@ test("Students: Parent can create/query own child, cannot run unfiltered list or
       updatedAt: serverTimestamp(),
     })
   );
+  await assertFails(
+    aliceDb.collection("students").doc("st_alice_1").update({
+      pickupStop: "Unapproved stop",
+      updatedAt: serverTimestamp(),
+    })
+  );
 
   // Parent CAN mark child ABSENT with note
   await assertSucceeds(
@@ -238,6 +475,13 @@ test("Students: Parent can create/query own child, cannot run unfiltered list or
   // Verified Driver CAN board child
   await assertSucceeds(
     driverDb.collection("students").doc("st_alice_1").update({
+      status: "BOARDED",
+      boardedTime: "7:15 AM",
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    driverDb.collection("students").doc("st_bob_bus").update({
       status: "BOARDED",
       boardedTime: "7:15 AM",
       updatedAt: serverTimestamp(),
@@ -269,6 +513,23 @@ test("Messages, alerts, incidents & fleet buses enforce RBAC and bounded queries
   const driverDb = testEnv.authenticatedContext(DRIVER_ERICK).firestore();
   const adminDb = testEnv.authenticatedContext(ADMIN_CHIEF).firestore();
 
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await db.collection("students").doc("st_alice_message").set({
+      parentUid: PARENT_ALICE,
+      assignedBusPlate: "KDE 732X",
+    });
+    await db.collection("interportal_messages").doc("msg_other_bus").set({
+      senderUid: PARENT_BOB,
+      senderName: "Bob Kamau",
+      senderRole: "PARENT",
+      recipientRole: "DRIVER",
+      targetBusPlate: "KDE 119A",
+      content: "Message for the other bus",
+      createdAt: serverTimestamp(),
+    });
+  });
+
   // Parent can post own PARENT interportal message
   await assertSucceeds(
     aliceDb.collection("interportal_messages").doc("msg_101").set({
@@ -277,8 +538,51 @@ test("Messages, alerts, incidents & fleet buses enforce RBAC and bounded queries
       senderRole: "PARENT",
       recipientRole: "DRIVER",
       targetBusPlate: "KDE 732X",
+      studentId: "st_alice_message",
       content: "Brian is ready at Kilimani gate.",
       displayTime: "7:10 AM",
+      createdAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    aliceDb.collection("interportal_messages").doc("msg_wrong_bus").set({
+      senderUid: PARENT_ALICE,
+      senderName: "Alice Kamau",
+      senderRole: "PARENT",
+      recipientRole: "DRIVER",
+      targetBusPlate: "KDE 119A",
+      studentId: "st_alice_message",
+      content: "Attempt to message another bus",
+      createdAt: serverTimestamp(),
+    })
+  );
+  await assertSucceeds(
+    driverDb.collection("interportal_messages")
+      .where("targetBusPlate", "==", "KDE 732X")
+      .get()
+  );
+  await assertFails(driverDb.collection("interportal_messages").get());
+  await assertFails(driverDb.collection("interportal_messages").doc("msg_other_bus").get());
+
+  await assertSucceeds(
+    driverDb.collection("interportal_messages").doc("msg_driver_own_bus").set({
+      senderUid: DRIVER_ERICK,
+      senderName: "Erick Mwangi",
+      senderRole: "DRIVER",
+      recipientRole: "PARENT",
+      targetBusPlate: "KDE 732X",
+      content: "Bus is approaching the stop.",
+      createdAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    driverDb.collection("interportal_messages").doc("msg_driver_other_bus").set({
+      senderUid: DRIVER_ERICK,
+      senderName: "Erick Mwangi",
+      senderRole: "DRIVER",
+      recipientRole: "PARENT",
+      targetBusPlate: "KDE 119A",
+      content: "Attempt to message another bus.",
       createdAt: serverTimestamp(),
     })
   );

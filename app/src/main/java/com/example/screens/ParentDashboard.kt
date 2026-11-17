@@ -240,7 +240,8 @@ fun ParentHomeTab(viewModel: AppViewModel) {
     val journeyEvents by viewModel.journeyEvents.collectAsState()
     val currentUserName by viewModel.currentUserName.collectAsState()
 
-    val assignedBusPlate = currentChild?.assignedBusPlate ?: "KDE 732X"
+    val hasLiveRouteData = com.example.BuildConfig.DEBUG && currentChild != null && stops.isNotEmpty()
+    val assignedBusPlate = currentChild?.assignedBusPlate.orEmpty()
 
     val mapsApiKey by viewModel.mapsApiKey.collectAsState()
 
@@ -251,18 +252,31 @@ fun ParentHomeTab(viewModel: AppViewModel) {
             .fillMaxSize()
             .verticalScroll(parentScrollState)
     ) {
-        // Map Hero at the top showing the specific assigned bus
-        MapHero(
-            progressPct = progress,
-            busPlate = assignedBusPlate,
-            statusText = "On Route",
-            etaMinutes = etaMinutes,
-            stops = stops,
-            customApiKey = mapsApiKey,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(220.dp)
-        )
+        if (hasLiveRouteData) {
+            MapHero(
+                progressPct = progress,
+                busPlate = assignedBusPlate,
+                statusText = "On Route",
+                etaMinutes = etaMinutes,
+                stops = stops,
+                customApiKey = mapsApiKey,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(220.dp)
+            )
+        } else {
+            SafiriCard(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Text(
+                    text = if (currentChild == null) {
+                        "No student is linked to this account yet."
+                    } else {
+                        "Live route information is not available yet."
+                    },
+                    color = TextSecondaryColor,
+                    fontSize = 13.sp
+                )
+            }
+        }
 
         Column(
             modifier = Modifier
@@ -281,102 +295,109 @@ fun ParentHomeTab(viewModel: AppViewModel) {
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 1. Child-Specific Greeting Header & Live Boarding Status Card
-            ChildSpecificGreetingCard(
-                child = currentChild,
-                parentName = currentUserName,
-                etaMinutes = etaMinutes,
-                viewModel = viewModel
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // 2. Child Journey Timeline Card (Boarded -> En route -> Arrived at school)
-            ChildJourneyTimelineCard(
-                child = currentChild,
-                events = journeyEvents,
-                etaMinutes = etaMinutes
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // 3. Child's Activity Feed Today Card
-            ChildActivityFeedCard(
-                child = currentChild,
-                events = journeyEvents
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Big ETA card
-            SafiriCard(testTag = "eta_card") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Text(
-                            text = "$etaMinutes",
-                            color = AccentBlue,
-                            fontSize = 44.sp,
-                            fontWeight = FontWeight.Black
-                        )
-                        Text(
-                            text = " min to school",
-                            color = TextSecondaryColor,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                    }
-
-                    SafiriTag(text = "On Time", color = GreenAccent)
-                }
-                Text(
-                    text = "Bus $assignedBusPlate is en route to ${currentChild?.schoolName ?: "St. Austin's Academy"}",
-                    color = TextPrimaryColor,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(top = 4.dp)
+            if (currentChild != null) {
+                ChildSpecificGreetingCard(
+                    child = currentChild,
+                    parentName = currentUserName,
+                    etaMinutes = etaMinutes,
+                    viewModel = viewModel
                 )
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    MetricTile(
-                        label = "DISTANCE REM.",
-                        value = "${distanceKm} km",
-                        modifier = Modifier.weight(1f)
+                if (hasLiveRouteData) {
+                    ChildJourneyTimelineCard(
+                        child = currentChild,
+                        events = journeyEvents,
+                        etaMinutes = etaMinutes
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    MetricTile(
-                        label = "STOPS LEFT",
-                        value = "$stopsLeft",
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    MetricTile(
-                        label = "PROGRESS",
-                        value = "$progressPct%",
-                        modifier = Modifier.weight(1f)
-                    )
+                    Spacer(modifier = Modifier.height(14.dp))
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp)),
-                    color = AccentBlue,
-                    trackColor = Surface3Color,
+                ChildActivityFeedCard(
+                    child = currentChild,
+                    events = journeyEvents
                 )
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+
+            if (hasLiveRouteData) {
+                SafiriCard(testTag = "eta_card") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Text(
+                                text = "$etaMinutes",
+                                color = AccentBlue,
+                                fontSize = 44.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Text(
+                                text = " min to school",
+                                color = TextSecondaryColor,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                        SafiriTag(text = "On Time", color = GreenAccent)
+                    }
+                    Text(
+                        text = "Bus $assignedBusPlate is en route to ${currentChild?.schoolName?.ifBlank { "school" } ?: "school"}",
+                        color = TextPrimaryColor,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        MetricTile(
+                            label = "DISTANCE REM.",
+                            value = "${distanceKm} km",
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        MetricTile(
+                            label = "STOPS LEFT",
+                            value = "$stopsLeft",
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        MetricTile(
+                            label = "PROGRESS",
+                            value = "$progressPct%",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                        color = AccentBlue,
+                        trackColor = Surface3Color,
+                    )
+                }
+            } else {
+                SafiriCard(testTag = "eta_card") {
+                    Text(
+                        text = "ETA and trip progress will appear when live route data is available.",
+                        color = TextSecondaryColor,
+                        fontSize = 13.sp
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -387,11 +408,12 @@ fun ParentHomeTab(viewModel: AppViewModel) {
             Spacer(modifier = Modifier.height(14.dp))
             ParentDriverMessageCard(viewModel)
             Spacer(modifier = Modifier.height(14.dp))
-            LiveJourneyShareCard(viewModel)
-            Spacer(modifier = Modifier.height(14.dp))
+            if (hasLiveRouteData) {
+                LiveJourneyShareCard(viewModel)
+                Spacer(modifier = Modifier.height(14.dp))
+            }
 
-            // Today's schedule
-            SafiriCard(testTag = "schedule_card") {
+            if (hasLiveRouteData) SafiriCard(testTag = "schedule_card") {
                 Text(
                     text = "TODAY'S SCHEDULE",
                     color = TextTertiaryColor,
@@ -551,7 +573,7 @@ fun ParentAlertsTab(viewModel: AppViewModel) {
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "St. Austin's Academy Dispatch: +254 700 123 456",
+                        text = "Contact your school for dispatch support.",
                         color = TextSecondaryColor,
                         fontSize = 11.sp
                     )
@@ -1092,7 +1114,7 @@ fun ParentSOSAlertCard(viewModel: AppViewModel) {
             }
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Bus KDE 732X driver triggered emergency assistance. School admin dispatch notified and tracking live.",
+                text = "An emergency alert is active. Contact emergency services and school dispatch for urgent assistance.",
                 color = TextPrimaryColor,
                 fontSize = 12.sp
             )
@@ -1449,6 +1471,8 @@ fun ParentChildrenSyncCard(viewModel: AppViewModel) {
 fun ParentDriverMessageCard(viewModel: AppViewModel) {
     val messages by viewModel.interportalMessages.collectAsState()
     val currentUserName by viewModel.currentUserName.collectAsState()
+    val currentChild by viewModel.currentChild.collectAsState()
+    val assignedBusPlate = currentChild?.assignedBusPlate?.takeIf { it.isNotBlank() }
     var messageText by remember { mutableStateOf("") }
 
     SafiriCard(testTag = "parent_driver_messages") {
@@ -1502,27 +1526,36 @@ fun ParentDriverMessageCard(viewModel: AppViewModel) {
             OutlinedTextField(
                 value = messageText,
                 onValueChange = { messageText = it },
-                placeholder = { Text("Message driver or admin...", fontSize = 11.sp) },
+                placeholder = {
+                    Text(
+                        if (assignedBusPlate != null) "Message your driver or admin..."
+                        else "Link a child with an assigned bus to message their driver",
+                        fontSize = 11.sp
+                    )
+                },
                 modifier = Modifier
                     .weight(1f)
                     .height(48.dp),
                 shape = RoundedCornerShape(12.dp),
-                singleLine = true
+                singleLine = true,
+                enabled = assignedBusPlate != null
             )
             Spacer(modifier = Modifier.width(8.dp))
             Button(
                 onClick = {
-                    if (messageText.isNotBlank()) {
+                    if (messageText.isNotBlank() && assignedBusPlate != null) {
                         viewModel.sendInterportalMessage(
                             senderName = "$currentUserName (Parent)",
                             senderRole = "PARENT",
                             recipientRole = "DRIVER",
-                            targetBusPlate = "KDE 732X",
-                            content = messageText
+                            targetBusPlate = assignedBusPlate,
+                            content = messageText,
+                            studentId = currentChild?.id
                         )
                         messageText = ""
                     }
                 },
+                enabled = assignedBusPlate != null,
                 modifier = Modifier.height(40.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
                 shape = RoundedCornerShape(12.dp)
@@ -1540,12 +1573,25 @@ fun ChildSpecificGreetingCard(
     etaMinutes: Int,
     viewModel: AppViewModel
 ) {
-    val childName = child?.name ?: "your child"
+    if (child == null) return
+
+    val childName = child.name
     val parentFirstName = parentName.split(" ").firstOrNull() ?: parentName
-    val busPlate = child?.assignedBusPlate ?: "KDE 732X"
-    val grade = child?.classGrade ?: "Grade 3"
-    val school = child?.schoolName ?: "St. Austin's Academy"
-    val pickupStop = child?.pickupStop ?: "Kawangware Stop"
+    val busPlate = child.assignedBusPlate
+    val hasAssignedBus = busPlate.isNotBlank()
+    val grade = child.classGrade.ifBlank { "Grade not set" }
+    val school = child.schoolName.ifBlank { "School not set" }
+    val pickupStop = child.pickupStop.ifBlank { "Assigned stop not set" }
+    val greeting = if (!hasAssignedBus) {
+        "$childName is awaiting a route assignment"
+    } else {
+        when (child.status) {
+            StudentStatus.BOARDED -> "$childName is on the way"
+            StudentStatus.DROPPED_OFF -> "$childName arrived at school"
+            StudentStatus.ABSENT -> "$childName is marked absent"
+            StudentStatus.NOT_BOARDED -> "$childName is waiting for the bus"
+        }
+    }
 
     SafiriCard(testTag = "child_greeting_card") {
         Row(
@@ -1581,7 +1627,7 @@ fun ChildSpecificGreetingCard(
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "$childName is on the way",
+                        text = greeting,
                         color = TextPrimaryColor,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -1619,7 +1665,7 @@ fun ChildSpecificGreetingCard(
                     .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
                 Text(
-                    text = "Bus $busPlate",
+                    text = if (hasAssignedBus) "Bus $busPlate" else "Bus assignment pending",
                     color = AccentBlue,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
@@ -1643,11 +1689,15 @@ fun ChildSpecificGreetingCard(
         Spacer(modifier = Modifier.height(14.dp))
 
         // Live Boarding Status Badge
-        val (statusText, statusColor) = when (child?.status) {
-            StudentStatus.BOARDED -> Pair("Boarded at $pickupStop • ${child.boardedTime ?: "07:12 AM"}", GreenAccent)
-            StudentStatus.DROPPED_OFF -> Pair("Arrived safely at $school", AccentBlue)
-            StudentStatus.ABSENT -> Pair("Marked ABSENT today", RedAccent)
-            else -> Pair("Waiting for Bus at $pickupStop • Pickup Soon", AmberAccent)
+        val (statusText, statusColor) = if (!hasAssignedBus) {
+            Pair("Route assignment pending", TextTertiaryColor)
+        } else {
+            when (child.status) {
+                StudentStatus.BOARDED -> Pair("Boarded at $pickupStop • ${child.boardedTime ?: "Time not recorded"}", GreenAccent)
+                StudentStatus.DROPPED_OFF -> Pair("Arrived safely at $school", AccentBlue)
+                StudentStatus.ABSENT -> Pair("Marked ABSENT today", RedAccent)
+                else -> Pair("Waiting for Bus at $pickupStop • Pickup Soon", AmberAccent)
+            }
         }
 
         Row(
@@ -1668,7 +1718,7 @@ fun ChildSpecificGreetingCard(
             Spacer(modifier = Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "LIVE BOARDING STATUS",
+                    text = "BOARDING STATUS",
                     color = statusColor,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
@@ -1691,12 +1741,14 @@ fun ChildJourneyTimelineCard(
     events: List<JourneyEvent>,
     etaMinutes: Int
 ) {
-    val childName = child?.name ?: "Child"
-    val school = child?.schoolName ?: "St. Austin's Academy"
-    val stop = child?.pickupStop ?: "Kawangware Stop"
+    if (child == null) return
+
+    val childName = child.name
+    val school = child.schoolName.ifBlank { "school" }
+    val stop = child.pickupStop.ifBlank { "assigned stop" }
     val isBoarded = child?.status == StudentStatus.BOARDED
     val isArrived = child?.status == StudentStatus.DROPPED_OFF
-    val boardedTime = child?.boardedTime ?: "07:12 AM"
+    val boardedTime = child.boardedTime ?: "Time not recorded"
 
     SafiriCard(testTag = "journey_timeline_card") {
         Text(

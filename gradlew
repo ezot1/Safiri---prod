@@ -111,12 +111,4 @@ fi
 
 # Collect all arguments for the java command, following the shell quoting and substitution rules
 JAVACMD="$JAVACMD"
-APP_ARGS="$@"
-
-# Escape application args
-set --
-for arg in "$@"; do
-    set -- "$@" "$arg"
-done
-
 exec "$JAVACMD" "-Dorg.gradle.appname=$APP_BASE_NAME" -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"

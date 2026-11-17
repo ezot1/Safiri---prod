@@ -3,6 +3,7 @@ package com.example
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -21,6 +22,8 @@ class ExampleRobolectricTest {
 
   @Test
   fun `test sign-in rate limiting`() {
+    assumeTrue("Demo account is only seeded in debug builds", BuildConfig.DEBUG)
+
     val context = ApplicationProvider.getApplicationContext<Context>()
     val viewModel = com.example.viewmodel.AppViewModel(context as android.app.Application)
 

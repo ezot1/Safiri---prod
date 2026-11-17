@@ -8,9 +8,14 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.security.MessageDigest
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -66,6 +71,95 @@ class SafiriFirestoreRepository(private val db: FirebaseFirestore) {
         }
     }
 
+    suspend fun saveDeviceMessagingToken(uid: String, token: String): Result<Unit> {
+        val tokenId = tokenDocumentId(token)
+        val path = "$COLLECTION_USERS/$uid/$COLLECTION_DEVICE_TOKENS/$tokenId"
+        return try {
+            db.collection(COLLECTION_USERS).document(uid)
+                .collection(COLLECTION_DEVICE_TOKENS).document(tokenId)
+                .set(
+                    mapOf(
+                        "token" to token,
+                        "platform" to "android",
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+                .awaitResult()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun removeDeviceMessagingToken(uid: String, token: String): Result<Unit> {
+        val tokenId = tokenDocumentId(token)
+        val path = "$COLLECTION_USERS/$uid/$COLLECTION_DEVICE_TOKENS/$tokenId"
+        return try {
+            db.collection(COLLECTION_USERS).document(uid)
+                .collection(COLLECTION_DEVICE_TOKENS).document(tokenId)
+                .delete()
+                .awaitResult()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, path)
+            Result.failure(e)
+        }
+    }
+
+    fun observeSubscription(): Flow<FirestoreSubscription?> =
+        db.collection(COLLECTION_SUBSCRIPTIONS).document(SUBSCRIPTION_DOCUMENT_ID)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObject(
+                    FirestoreSubscription::class.java,
+                    DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                )
+            }
+
+    fun observeSubscriptionInvoices(): Flow<List<FirestoreSubscriptionInvoice>> =
+        db.collection(COLLECTION_SUBSCRIPTIONS)
+            .document(SUBSCRIPTION_DOCUMENT_ID)
+            .collection(COLLECTION_INVOICES)
+            .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit(20)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObjects(
+                    FirestoreSubscriptionInvoice::class.java,
+                    DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                )
+            }
+
+    suspend fun createParentRegistration(
+        profile: FirestoreUserProfile,
+        student: FirestoreStudent
+    ): Result<Unit> {
+        val path = "$COLLECTION_USERS/${profile.userId}, $COLLECTION_STUDENTS/${student.id}"
+        return try {
+            db.runBatch { batch ->
+                batch.set(
+                    db.collection(COLLECTION_USERS).document(profile.userId),
+                    profile.toCreateMap()
+                )
+                batch.set(
+                    db.collection(COLLECTION_STUDENTS).document(student.id),
+                    student.toCreateMap()
+                )
+            }.awaitResult()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, path)
+            Result.failure(e)
+        }
+    }
+
     // --- STUDENTS ---
 
     fun observeStudentsForParent(parentUid: String): Flow<List<FirestoreStudent>> =
@@ -79,6 +173,24 @@ class SafiriFirestoreRepository(private val db: FirebaseFirestore) {
                 )
             }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeStudentsForDriver(driverUid: String): Flow<List<FirestoreStudent>> =
+        observeDriverBusPlate(driverUid).flatMapLatest { busPlate ->
+            if (busPlate.isBlank()) {
+                flowOf(emptyList<FirestoreStudent>())
+            } else {
+                db.collection(COLLECTION_STUDENTS)
+                    .whereEqualTo("assignedBusPlate", busPlate)
+                    .snapshots()
+                    .map { snapshot ->
+                        snapshot.toObjects(
+                            FirestoreStudent::class.java,
+                            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                        )
+                    }
+            }
+        }
+
     fun observeAllStudents(): Flow<List<FirestoreStudent>> =
         db.collection(COLLECTION_STUDENTS)
             .snapshots()
@@ -88,6 +200,36 @@ class SafiriFirestoreRepository(private val db: FirebaseFirestore) {
                     DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
                 )
             }
+
+    suspend fun updateStudentBusAssignmentByAdmin(
+        studentId: String,
+        busPlate: String,
+        driverName: String,
+        pickupStop: String,
+        dropoffStop: String
+    ): Result<Unit> {
+        val path = "$COLLECTION_STUDENTS/$studentId"
+        return try {
+            db.collection(COLLECTION_STUDENTS).document(studentId)
+                .update(
+                    mapOf(
+                        "assignedBusPlate" to busPlate,
+                        "assignedDriverName" to driverName,
+                        "pickupStop" to pickupStop,
+                        "dropoffStop" to dropoffStop,
+                        "schoolName" to dropoffStop,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+                .awaitResult()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
 
     suspend fun getStudentById(studentId: String): Result<FirestoreStudent?> {
         val path = "$COLLECTION_STUDENTS/$studentId"
@@ -187,6 +329,24 @@ class SafiriFirestoreRepository(private val db: FirebaseFirestore) {
                 )
             }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeMessagesForDriver(driverUid: String): Flow<List<FirestoreInterportalMessage>> =
+        observeDriverBusPlate(driverUid).flatMapLatest { busPlate ->
+            if (busPlate.isBlank()) {
+                flowOf(emptyList<FirestoreInterportalMessage>())
+            } else {
+                db.collection(COLLECTION_MESSAGES)
+                    .whereEqualTo("targetBusPlate", busPlate)
+                    .snapshots()
+                    .map { snapshot ->
+                        snapshot.toObjects(
+                            FirestoreInterportalMessage::class.java,
+                            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                        )
+                    }
+            }
+        }
+
     fun observeAllMessagesForStaff(): Flow<List<FirestoreInterportalMessage>> =
         db.collection(COLLECTION_MESSAGES)
             .snapshots()
@@ -196,6 +356,19 @@ class SafiriFirestoreRepository(private val db: FirebaseFirestore) {
                     DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
                 )
             }
+
+    private fun observeDriverBusPlate(driverUid: String): Flow<String> =
+        db.collection(COLLECTION_DRIVERS)
+            .document(driverUid)
+            .snapshots()
+            .map { snapshot ->
+                if (snapshot.getBoolean("active") == true) {
+                    snapshot.getString("busPlate").orEmpty()
+                } else {
+                    ""
+                }
+            }
+            .distinctUntilChanged()
 
     suspend fun sendInterportalMessage(
         messageId: String,
@@ -327,6 +500,57 @@ class SafiriFirestoreRepository(private val db: FirebaseFirestore) {
                 )
             }
 
+    suspend fun getFleetBusForDriver(driverUid: String): Result<FirestoreFleetBus?> {
+        val path = COLLECTION_FLEET_BUSES
+        return try {
+            val snapshot = db.collection(COLLECTION_FLEET_BUSES)
+                .whereEqualTo("driverUid", driverUid)
+                .limit(2)
+                .get()
+                .awaitResult()
+            if (snapshot.size() > 1) {
+                Result.failure(IllegalStateException("Driver is assigned to more than one fleet bus."))
+            } else {
+                val document = snapshot.documents.firstOrNull()
+                Result.success(
+                    document?.toObject(FirestoreFleetBus::class.java)?.copy(id = document.id)
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.LIST, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateBusLocationByDriver(
+        busId: String,
+        lat: Double,
+        lng: Double,
+        speed: Long
+    ): Result<Unit> {
+        val path = "$COLLECTION_FLEET_BUSES/$busId"
+        return try {
+            db.collection(COLLECTION_FLEET_BUSES).document(busId)
+                .update(
+                    mapOf(
+                        "lat" to lat,
+                        "lng" to lng,
+                        "speed" to speed,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+                .awaitResult()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
     suspend fun updateBusTelemetryByDriver(
         busId: String,
         lat: Double,
@@ -359,11 +583,21 @@ class SafiriFirestoreRepository(private val db: FirebaseFirestore) {
     }
 
     companion object {
+        private const val COLLECTION_DEVICE_TOKENS = "device_tokens"
+        private const val COLLECTION_SUBSCRIPTIONS = "subscriptions"
+        private const val COLLECTION_INVOICES = "invoices"
+        private const val SUBSCRIPTION_DOCUMENT_ID = "main"
         const val COLLECTION_USERS = "users"
+        const val COLLECTION_DRIVERS = "drivers"
         const val COLLECTION_STUDENTS = "students"
         const val COLLECTION_MESSAGES = "interportal_messages"
         const val COLLECTION_ALERTS = "alerts"
         const val COLLECTION_INCIDENTS = "community_incidents"
         const val COLLECTION_FLEET_BUSES = "fleet_buses"
+
+        private fun tokenDocumentId(token: String): String =
+            MessageDigest.getInstance("SHA-256")
+                .digest(token.toByteArray(Charsets.UTF_8))
+                .joinToString("") { byte -> "%02x".format(byte) }
     }
 }

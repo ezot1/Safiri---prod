@@ -47,9 +47,15 @@ fun ParentSignupScreen(
     var phone by remember { mutableStateOf("+254 ") }
 
     var childName by remember { mutableStateOf("") }
-    var childGrade by remember { mutableStateOf("Grade 3") }
-    var schoolName by remember { mutableStateOf("St. Austin's Academy") }
-    var pickupStop by remember { mutableStateOf("Kawangware Stop") }
+    var childGrade by remember {
+        mutableStateOf(if (com.example.BuildConfig.DEBUG) "Grade 3" else "")
+    }
+    var schoolName by remember {
+        mutableStateOf(if (com.example.BuildConfig.DEBUG) "St. Austin's Academy" else "")
+    }
+    var pickupStop by remember {
+        mutableStateOf(if (com.example.BuildConfig.DEBUG) "Kawangware Stop" else "")
+    }
     var selectedAvatarIndex by remember { mutableIntStateOf(0) }
 
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -667,7 +673,7 @@ fun ParentSignupScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Step 3 of 3 — Confirm details to start live tracking",
+                            text = "Step 3 of 3 — Review your details before submitting",
                             color = TextSecondaryColor,
                             fontSize = 13.sp,
                             modifier = Modifier.padding(top = 4.dp, bottom = 20.dp)
@@ -724,8 +730,11 @@ fun ParentSignupScreen(
                                 SummaryDetailRow(label = "Parent", value = "$fullName ($phone)")
                                 SummaryDetailRow(label = "Email", value = email)
                                 SummaryDetailRow(label = "Assigned Stop", value = pickupStop)
-                                SummaryDetailRow(label = "Assigned Bus", value = if (pickupStop.contains("Kawangware")) "KBZ 441G" else "KDE 732X")
-                                SummaryDetailRow(label = "Data Sync", value = "Firebase Firestore Sync Enabled ✓")
+                                SummaryDetailRow(
+                                    label = "Assigned Bus",
+                                    value = if (com.example.BuildConfig.DEBUG) "Demo assignment (debug only)" else "Pending school assignment"
+                                )
+                                SummaryDetailRow(label = "Data Sync", value = "Live tracking starts after school and route assignment")
                             }
                         }
 

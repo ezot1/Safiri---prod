@@ -2,6 +2,7 @@ package com.example.screens
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -191,9 +192,13 @@ fun AdminFleetTab(
 ) {
     val fleetBuses by viewModel.adminFleetBuses.collectAsState()
     val boardedCount by viewModel.boardedCount.collectAsState()
+    val activeAlerts by viewModel.activeAlerts.collectAsState()
     val subStatus by viewModel.subscriptionStatus.collectAsState()
     val subAmount by viewModel.agreedMonthlyAmount.collectAsState()
     var showPayDialog by remember { mutableStateOf(false) }
+    val activeBusCount = fleetBuses.count { it.status in listOf("On Time", "Delayed", "Active") }
+    val delayedBusCount = fleetBuses.count { it.status == "Delayed" }
+    val safetyReportCount = activeAlerts.count { it.severity == AlertSeverity.DANGER }
 
     ScrollView(
         modifier = Modifier.fillMaxSize(),
@@ -260,17 +265,20 @@ fun AdminFleetTab(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            MetricTile(label = "ACTIVE BUSES", value = "4 / 5", modifier = Modifier.weight(1f))
-            // Updates dynamically as boarding happens!
-            MetricTile(label = "STUDENTS ABOARD", value = "${59 + boardedCount}", modifier = Modifier.weight(1f))
+            MetricTile(
+                label = "ACTIVE BUSES",
+                value = "$activeBusCount / ${fleetBuses.size}",
+                modifier = Modifier.weight(1f)
+            )
+            MetricTile(label = "STUDENTS ABOARD", value = "$boardedCount", modifier = Modifier.weight(1f))
         }
         Spacer(modifier = Modifier.height(8.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            MetricTile(label = "DELAYED BUSES", value = "1", modifier = Modifier.weight(1f))
-            MetricTile(label = "SAFETY REPORTS", value = "0", modifier = Modifier.weight(1f))
+            MetricTile(label = "DELAYED BUSES", value = "$delayedBusCount", modifier = Modifier.weight(1f))
+            MetricTile(label = "SAFETY REPORTS", value = "$safetyReportCount", modifier = Modifier.weight(1f))
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -287,7 +295,7 @@ fun AdminFleetTab(
             Spacer(modifier = Modifier.height(14.dp))
 
             fleetBuses.forEach { bus ->
-                val isActive = bus.plate != "KDE 991Z"
+                val isActive = bus.status in listOf("On Time", "Delayed", "Active")
                 val plateColor = if (isActive) AccentBlue else TextTertiaryColor
 
                 Row(
@@ -369,7 +377,7 @@ fun AdminMapViewTab(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Simultaneous GPS signals tracked through Nairobi streets",
+                    text = "Live fleet positions and route status",
                     color = TextSecondaryColor,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(bottom = 8.dp)
@@ -383,21 +391,35 @@ fun AdminMapViewTab(
             }
         }
 
-        // Multiple buses drawn on Map Canvas
-        val busOffsets = fleetBuses.filter { it.plate != "KDE 991Z" }.map {
+        val activeBuses = fleetBuses.filter { it.status in listOf("On Time", "Delayed", "Active") }
+        val busOffsets = activeBuses.map {
             Pair(it.latOffset, it.lngOffset)
         }
 
-        MapHero(
-            progressPct = 0f,
-            isMultipleBuses = true,
-            multipleBusOffsets = busOffsets,
-            customApiKey = mapsApiKey,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(260.dp)
-                .padding(horizontal = 16.dp)
-        )
+        if (com.example.BuildConfig.DEBUG && activeBuses.isNotEmpty()) {
+            MapHero(
+                progressPct = 0f,
+                isMultipleBuses = true,
+                multipleBusOffsets = busOffsets,
+                customApiKey = mapsApiKey,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(260.dp)
+                    .padding(horizontal = 16.dp)
+            )
+        } else {
+            SafiriCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                Text(
+                    text = if (activeBuses.isEmpty()) {
+                        "No active buses are reporting a location."
+                    } else {
+                        "Fleet locations are available, but production map display is not configured."
+                    },
+                    color = TextSecondaryColor,
+                    fontSize = 13.sp
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -418,7 +440,7 @@ fun AdminMapViewTab(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
-                fleetBuses.filter { it.plate != "KDE 991Z" }.forEachIndexed { idx, bus ->
+                activeBuses.forEachIndexed { idx, bus ->
                     val colors = listOf(AccentBlue, AmberAccent, GreenAccent, PurpleAccent)
                     val dotColor = colors[idx % colors.size]
 
@@ -901,6 +923,16 @@ fun AdminSettingsTab(
     val t1 by viewModel.toggleAdminEmergency.collectAsState()
     val t2 by viewModel.toggleAdminGeofence.collectAsState()
     val t3 by viewModel.toggleAdminDailySummary.collectAsState()
+    val fleetBuses by viewModel.adminFleetBuses.collectAsState()
+    val adminName by viewModel.currentUserName.collectAsState()
+    val adminEmail by viewModel.currentUser.collectAsState()
+    val displayedAdminName = adminName.takeIf { it.isNotBlank() && it != "User" } ?: "Administrator"
+    val adminInitials = displayedAdminName
+        .split(" ")
+        .mapNotNull { it.firstOrNull()?.toString() }
+        .take(2)
+        .joinToString("")
+        .ifBlank { "AD" }
 
     var showProfileDialog by remember { mutableStateOf(false) }
     var showBusesDialog by remember { mutableStateOf(false) }
@@ -924,13 +956,13 @@ fun AdminSettingsTab(
                 ),
             contentAlignment = Alignment.Center
         ) {
-            Text(text = "SK", color = BackgroundColor, fontSize = 28.sp, fontWeight = FontWeight.Black)
+            Text(text = adminInitials, color = BackgroundColor, fontSize = 28.sp, fontWeight = FontWeight.Black)
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        Text(text = "Sarah Kimani", color = TextPrimaryColor, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        Text(text = "admin@safiri.co.ke", color = TextSecondaryColor, fontSize = 12.sp)
+        Text(text = displayedAdminName, color = TextPrimaryColor, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(text = adminEmail.orEmpty().ifBlank { "Administrator account" }, color = TextSecondaryColor, fontSize = 12.sp)
         Spacer(modifier = Modifier.height(6.dp))
         SafiriTag(text = "School Administrator", color = PurpleAccent)
 
@@ -950,7 +982,7 @@ fun AdminSettingsTab(
             SettingsRow(
                 icon = Icons.Filled.Business,
                 label = "School profile",
-                subLabel = "St. Mary's Academy, Nairobi",
+                subLabel = "School profile details are not configured",
                 onClick = { showProfileDialog = true }
             )
             HorizontalDivider(color = BorderColor)
@@ -1019,9 +1051,9 @@ fun AdminSettingsTab(
 
     // 1. School Profile Edit Dialog
     if (showProfileDialog) {
-        var schoolName by remember { mutableStateOf("St. Mary's Academy") }
-        var location by remember { mutableStateOf("Nairobi, Kenya") }
-        var contactEmail by remember { mutableStateOf("admin@safiri.co.ke") }
+        var schoolName by remember { mutableStateOf("") }
+        var location by remember { mutableStateOf("") }
+        var contactEmail by remember { mutableStateOf(adminEmail.orEmpty()) }
 
         AlertDialog(
             onDismissRequest = { showProfileDialog = false },
@@ -1117,17 +1149,13 @@ fun AdminSettingsTab(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Toggle Bus Operational Status:", color = TextSecondaryColor, fontSize = 12.sp)
+                    Text("Current fleet status:", color = TextSecondaryColor, fontSize = 12.sp)
 
-                    val buses = listOf(
-                        Triple("KDE 732X", "Erick Mwangi", true),
-                        Triple("KDE 119A", "John Kiprop", true),
-                        Triple("KDE 540R", "Grace Wambui", true),
-                        Triple("KDE 902Y", "Peter Koech", false)
-                    )
+                    if (fleetBuses.isEmpty()) {
+                        Text("No live fleet buses are available.", color = TextTertiaryColor, fontSize = 12.sp)
+                    }
 
-                    buses.forEach { (plate, driver, active) ->
-                        var isChecked by remember { mutableStateOf(active) }
+                    fleetBuses.forEach { bus ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1138,19 +1166,10 @@ fun AdminSettingsTab(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text(plate, color = TextPrimaryColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                Text("Driver: $driver", color = TextSecondaryColor, fontSize = 11.sp)
+                                Text(bus.plate, color = TextPrimaryColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                Text("Driver: ${bus.driverName.ifBlank { "Unassigned" }}", color = TextSecondaryColor, fontSize = 11.sp)
                             }
-                            Switch(
-                                checked = isChecked,
-                                onCheckedChange = { isChecked = it },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = PurpleAccent,
-                                    checkedTrackColor = PurpleAccent.copy(alpha = 0.4f),
-                                    uncheckedThumbColor = TextTertiaryColor,
-                                    uncheckedTrackColor = SurfaceColor
-                                )
-                            )
+                            SafiriTag(text = bus.status, color = bus.statusColor)
                         }
                     }
                 }
@@ -1604,7 +1623,7 @@ fun AdminSOSResolutionBanner(viewModel: AppViewModel) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
                         Text("CRITICAL DRIVER SOS TRIGGERED", color = RedAccent, fontSize = 13.sp, fontWeight = FontWeight.Black)
-                        Text("Driver Erick Mwangi (KDE 732X) dispatched emergency signal", color = TextPrimaryColor, fontSize = 11.sp)
+                        Text("Emergency SOS is active. Review the alert and contact the assigned driver.", color = TextPrimaryColor, fontSize = 11.sp)
                     }
                 }
                 Button(
@@ -1631,12 +1650,23 @@ fun AdminStudentInterconnectionCard(viewModel: AppViewModel) {
     var editParentNameInput by remember { mutableStateOf("") }
     var editParentEmailInput by remember { mutableStateOf("") }
     var editParentPhoneInput by remember { mutableStateOf("") }
+    var assigningBusStudent by remember { mutableStateOf<Student?>(null) }
+    var assignedBusInput by remember { mutableStateOf("") }
+    var assignedDriverInput by remember { mutableStateOf("") }
+    var approvedPickupInput by remember { mutableStateOf("") }
+    var approvedDropoffInput by remember { mutableStateOf("") }
+    var assignmentError by remember { mutableStateOf("") }
+    var assignmentSaving by remember { mutableStateOf(false) }
 
     var newStudentName by remember { mutableStateOf("") }
     var newParentName by remember { mutableStateOf("") }
     var newParentPhone by remember { mutableStateOf("") }
-    var newBusPlate by remember { mutableStateOf("KDE 732X") }
-    var newStop by remember { mutableStateOf("Kilimani Bus Bay") }
+    var newBusPlate by remember {
+        mutableStateOf(if (com.example.BuildConfig.DEBUG) "KDE 732X" else "")
+    }
+    var newStop by remember {
+        mutableStateOf(if (com.example.BuildConfig.DEBUG) "Kilimani Bus Bay" else "")
+    }
 
     SafiriCard(testTag = "admin_student_roster_card") {
         Row(
@@ -1755,6 +1785,27 @@ fun AdminStudentInterconnectionCard(viewModel: AppViewModel) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     OutlinedButton(
                         onClick = {
+                            assigningBusStudent = student
+                            assignedBusInput = student.assignedBusPlate
+                            assignedDriverInput = student.assignedDriverName
+                            approvedPickupInput = student.pickupStop
+                            approvedDropoffInput = student.dropoffStop
+                            assignmentError = ""
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            if (student.assignedBusPlate.isBlank()) "Approve Bus" else "Change Bus",
+                            fontSize = 10.sp,
+                            color = PurpleAccent,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    OutlinedButton(
+                        onClick = {
                             editingParentStudent = student
                             editParentNameInput = student.parentName
                             editParentEmailInput = student.parentEmail
@@ -1771,6 +1822,103 @@ fun AdminStudentInterconnectionCard(viewModel: AppViewModel) {
                 }
             }
         }
+    }
+
+    assigningBusStudent?.let { student ->
+        AlertDialog(
+            onDismissRequest = {
+                if (!assignmentSaving) assigningBusStudent = null
+            },
+            title = {
+                Text(
+                    if (student.assignedBusPlate.isBlank()) "Approve Bus Assignment" else "Update Bus Assignment",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimaryColor
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        "Review the parent's route request and approve its bus, driver, and stops.",
+                        fontSize = 11.sp,
+                        color = TextSecondaryColor
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = assignedBusInput,
+                        onValueChange = { assignedBusInput = it },
+                        label = { Text("Assigned Bus Plate") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = assignedDriverInput,
+                        onValueChange = { assignedDriverInput = it },
+                        label = { Text("Assigned Driver Name") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = approvedPickupInput,
+                        onValueChange = { approvedPickupInput = it },
+                        label = { Text("Approved Pickup Stop") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = approvedDropoffInput,
+                        onValueChange = { approvedDropoffInput = it },
+                        label = { Text("Approved School / Destination") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    if (assignmentError.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(assignmentError, color = RedAccent, fontSize = 11.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !assignmentSaving,
+                    onClick = {
+                        assignmentSaving = true
+                        assignmentError = ""
+                        viewModel.approveStudentBusAssignment(
+                            studentId = student.id,
+                            busPlate = assignedBusInput,
+                            driverName = assignedDriverInput,
+                            pickupStop = approvedPickupInput,
+                            dropoffStop = approvedDropoffInput
+                        ) { success, message ->
+                            assignmentSaving = false
+                            if (success) {
+                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                assigningBusStudent = null
+                            } else {
+                                assignmentError = message
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PurpleAccent)
+                ) {
+                    Text(if (assignmentSaving) "Saving..." else "Approve", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !assignmentSaving,
+                    onClick = { assigningBusStudent = null }
+                ) {
+                    Text("Cancel", color = TextSecondaryColor)
+                }
+            },
+            containerColor = SurfaceColor
+        )
     }
 
     // Modal to Link Parent
@@ -1889,9 +2037,15 @@ fun AdminStudentInterconnectionCard(viewModel: AppViewModel) {
                                 id = null,
                                 name = newStudentName,
                                 parentName = newParentName,
-                                parentPhone = if (newParentPhone.isNotBlank()) newParentPhone else "+254 700 000 000",
+                                parentPhone = if (newParentPhone.isNotBlank()) {
+                                    newParentPhone
+                                } else if (com.example.BuildConfig.DEBUG) {
+                                    "+254 700 000 000"
+                                } else {
+                                    ""
+                                },
                                 busPlate = newBusPlate,
-                                driverName = "Erick Mwangi",
+                                driverName = if (com.example.BuildConfig.DEBUG) "Erick Mwangi" else "",
                                 pickupStop = newStop
                             )
                             showAddStudentDialog = false

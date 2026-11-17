@@ -22,8 +22,13 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    val googleMapsApiKey = System.getenv("GOOGLE_MAPS_API_KEY").orEmpty()
+    val escapedGoogleMapsApiKey = googleMapsApiKey
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+    buildConfigField("String", "GOOGLE_MAPS_API_KEY", "\"$escapedGoogleMapsApiKey\"")
     manifestPlaceholders["GOOGLE_MAPS_API_KEY"] =
-        System.getenv("GOOGLE_MAPS_API_KEY") ?: "YOUR_GOOGLE_MAPS_API_KEY"
+        googleMapsApiKey.ifBlank { "YOUR_GOOGLE_MAPS_API_KEY" }
   }
 
   signingConfigs {
@@ -115,6 +120,8 @@ dependencies {
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
   implementation(libs.firebase.firestore)
+  implementation(libs.firebase.messaging)
+  implementation(libs.firebase.functions.android)
 
   // Firebase Auth with Google Sign-In requires all of the following to be uncommented together.
   // If you are using Firebase Auth with other providers (e.g. Email/Password), you may only need

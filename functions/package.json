@@ -1,0 +1,16 @@
+{
+  "name": "safiri-alert-functions",
+  "private": true,
+  "main": "src/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "lint": "node --check src/index.js && node --check src/alert-message.js && node --check src/payment-utils.js && node --check src/subscription-payments.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.1",
+    "firebase-functions": "^7.4.0"
+  }
+}

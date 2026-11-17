@@ -92,7 +92,8 @@ data class InterportalMessage(
     val studentName: String? = null,
     val content: String,
     val timestamp: String,
-    val isRead: Boolean = false
+    val isRead: Boolean = false,
+    val studentId: String? = null
 )
 
 data class RouteStop(

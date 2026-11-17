@@ -126,6 +126,7 @@ fun DriverRouteTab(viewModel: AppViewModel) {
     val driverSpeedKmh by viewModel.driverSpeedKmh.collectAsState()
     val telemetrySourceLabel by viewModel.telemetrySourceLabel.collectAsState()
     val locationErrorNotice by viewModel.locationErrorNotice.collectAsState()
+    val rateLimitNotice by viewModel.rateLimitNotice.collectAsState()
 
     var locationPermissionDenied by remember { mutableStateOf(false) }
 
@@ -152,16 +153,35 @@ fun DriverRouteTab(viewModel: AppViewModel) {
                 .fillMaxWidth()
                 .wrapContentHeight()
         ) {
-            // Reusable Map Component showing Nairobi streets
-            MapHero(
-                progressPct = progress,
-                busPlate = "KDE 732X",
-                statusText = "Active Route",
-                etaMinutes = etaMinutes,
-                stops = stops,
-                customApiKey = mapsApiKey,
-                modifier = Modifier.fillMaxWidth()
-            )
+            if (com.example.BuildConfig.DEBUG) {
+                MapHero(
+                    progressPct = progress,
+                    busPlate = "KDE 732X",
+                    statusText = if (isLiveGpsActive) "Live GPS" else "Demo Route",
+                    etaMinutes = etaMinutes,
+                    stops = stops,
+                    customApiKey = mapsApiKey,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp)
+                        .background(SurfaceColor),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (isLiveGpsActive) {
+                            "Live GPS is active. Map display requires an assigned route."
+                        } else {
+                            "Live map tracking will be available when a bus is assigned."
+                        },
+                        color = TextSecondaryColor,
+                        fontSize = 13.sp
+                    )
+                }
+            }
 
             // Customized Driver Badges (Top-Left and Top-Right overlaid)
             Row(
@@ -180,7 +200,7 @@ fun DriverRouteTab(viewModel: AppViewModel) {
                         .padding(horizontal = 8.dp, vertical = 6.dp)
                 ) {
                     Text(
-                        text = "KDE 732X • $currentUserName",
+                        text = if (com.example.BuildConfig.DEBUG) "KDE 732X • $currentUserName" else currentUserName,
                         color = TextPrimaryColor,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
@@ -239,7 +259,7 @@ fun DriverRouteTab(viewModel: AppViewModel) {
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "HQ & active fleet monitors alerted. Call 999 or School Dispatch for urgent voice assistance.",
+                            text = "Contact emergency services and school dispatch for urgent assistance.",
                             color = Color.White.copy(alpha = 0.85f),
                             fontSize = 11.sp,
                             lineHeight = 14.sp
@@ -283,10 +303,14 @@ fun DriverRouteTab(viewModel: AppViewModel) {
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = if (isLiveGpsActive) {
+                        text = if (isLiveGpsActive && com.example.BuildConfig.DEBUG) {
                             "Lat ${"%.5f".format(driverGpsLat)}, Lng ${"%.5f".format(driverGpsLng)} • $driverSpeedKmh km/h"
-                        } else {
+                        } else if (isLiveGpsActive) {
+                            "Device GPS is active. Server sync requires an assigned bus."
+                        } else if (com.example.BuildConfig.DEBUG) {
                             "Using route schedule estimate until device GPS is enabled"
+                        } else {
+                            "Live GPS reporting requires an assigned bus"
                         },
                         color = TextSecondaryColor,
                         fontSize = 11.sp
@@ -335,10 +359,10 @@ fun DriverRouteTab(viewModel: AppViewModel) {
                 }
             }
 
-            if (locationPermissionDenied || locationErrorNotice != null) {
+            if (locationPermissionDenied || locationErrorNotice != null || rateLimitNotice != null) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = locationErrorNotice
+                    text = locationErrorNotice ?: rateLimitNotice
                         ?: "Location permission was denied. Grant Fine or Coarse Location to stream live shuttle coordinates.",
                     color = AmberAccent,
                     fontSize = 11.sp,
@@ -349,69 +373,75 @@ fun DriverRouteTab(viewModel: AppViewModel) {
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Bottom sheet contents
-        SafiriCard(testTag = "driver_metrics_card") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                MetricTile(label = "ABOARD", value = "${12 + boardedCount} / 22", modifier = Modifier.weight(1f))
-                Spacer(modifier = Modifier.width(6.dp))
-                MetricTile(label = "NEXT STOP", value = if (kilimaniComplete) "Upper Hill" else "Kilimani", modifier = Modifier.weight(1.2f))
-                Spacer(modifier = Modifier.width(6.dp))
-                MetricTile(label = "ETA", value = "${etaMinutes}m", modifier = Modifier.weight(0.8f))
-                Spacer(modifier = Modifier.width(6.dp))
-                MetricTile(label = "DONE %", value = "${(progress * 100).toInt()}%", modifier = Modifier.weight(0.9f))
+        if (com.example.BuildConfig.DEBUG) {
+            SafiriCard(testTag = "driver_metrics_card") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    MetricTile(label = "ABOARD", value = "${12 + boardedCount} / 22", modifier = Modifier.weight(1f))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    MetricTile(label = "NEXT STOP", value = if (kilimaniComplete) "Upper Hill" else "Kilimani", modifier = Modifier.weight(1.2f))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    MetricTile(label = "ETA", value = "${etaMinutes}m", modifier = Modifier.weight(0.8f))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    MetricTile(label = "DONE %", value = "${(progress * 100).toInt()}%", modifier = Modifier.weight(0.9f))
+                }
             }
-        }
 
-        Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-        // Route stops card
-        SafiriCard(testTag = "driver_stops_checklist_card") {
-            Text(
-                text = "ROUTE STOPS CHECKLIST",
-                color = TextTertiaryColor,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.5.sp
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+            SafiriCard(testTag = "driver_stops_checklist_card") {
+                Text(
+                    text = "ROUTE STOPS CHECKLIST",
+                    color = TextTertiaryColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
 
-            // Done stops show green checkmark dot + green pill. Current stop shows pulsing blue dot + Next pill. Pending shows grey dot.
-            RouteChecklistRow(name = "Kawangware Stop", done = true, active = false, label = "Completed")
-            RouteChecklistRow(name = "Westlands Mall Bay", done = true, active = false, label = "Completed")
-            RouteChecklistRow(
-                name = "Kilimani Bus Bay",
-                done = kilimaniComplete,
-                active = !kilimaniComplete,
-                label = if (kilimaniComplete) "Completed" else "Next stop"
-            )
-            RouteChecklistRow(
-                name = "Upper Hill Junction",
-                done = false,
-                active = kilimaniComplete,
-                label = if (kilimaniComplete) "Next stop" else "Pending"
-            )
-        }
+                RouteChecklistRow(name = "Kawangware Stop", done = true, active = false, label = "Completed")
+                RouteChecklistRow(name = "Westlands Mall Bay", done = true, active = false, label = "Completed")
+                RouteChecklistRow(
+                    name = "Kilimani Bus Bay",
+                    done = kilimaniComplete,
+                    active = !kilimaniComplete,
+                    label = if (kilimaniComplete) "Completed" else "Next stop"
+                )
+                RouteChecklistRow(
+                    name = "Upper Hill Junction",
+                    done = false,
+                    active = kilimaniComplete,
+                    label = if (kilimaniComplete) "Next stop" else "Pending"
+                )
+            }
 
-        Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-        // Trip summary card
-        SafiriCard(testTag = "trip_summary_card") {
-            Text(
-                text = "TRIP PERFORMANCE SUMMARY",
-                color = TextTertiaryColor,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.5.sp
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+            SafiriCard(testTag = "trip_summary_card") {
+                Text(
+                    text = "TRIP PERFORMANCE SUMMARY",
+                    color = TextTertiaryColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
 
-            SummaryLabelRow(label = "Departure Time", value = "03:45 PM")
-            SummaryLabelRow(label = "Distance Traveled So Far", value = "3.2 km")
-            SummaryLabelRow(label = "Stops Completed", value = if (kilimaniComplete) "3 / 4" else "2 / 4")
-            SummaryLabelRow(label = "Students Confirmed Aboard", value = "${boardedCount} / 6 checklist boarded")
+                SummaryLabelRow(label = "Departure Time", value = "03:45 PM")
+                SummaryLabelRow(label = "Distance Traveled So Far", value = "3.2 km")
+                SummaryLabelRow(label = "Stops Completed", value = if (kilimaniComplete) "3 / 4" else "2 / 4")
+                SummaryLabelRow(label = "Students Confirmed Aboard", value = "${boardedCount} / 6 checklist boarded")
+            }
+        } else {
+            SafiriCard(testTag = "driver_route_unavailable_card") {
+                Text(
+                    text = "Route, passenger, and trip metrics will appear after a bus and route are assigned.",
+                    color = TextSecondaryColor,
+                    fontSize = 13.sp
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -450,272 +480,286 @@ fun DriverBoardingTab(viewModel: AppViewModel) {
         }
 
         Text(
-            text = "Verify Kilimani students as they climb aboard the bus",
+            text = if (com.example.BuildConfig.DEBUG) {
+                "Verify Kilimani students as they climb aboard the bus"
+            } else {
+                "Assigned students will appear here when a route is configured."
+            },
             color = TextSecondaryColor,
             fontSize = 13.sp,
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        // Progress bar card
-        SafiriCard(testTag = "boarding_progress_card") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("Checklist Progress", color = TextPrimaryColor, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                Text("$boardedCount / 6 boarded", color = GreenAccent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            LinearProgressIndicator(
-                progress = { boardedCount.toFloat() / 6f },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp)),
-                color = GreenAccent,
-                trackColor = Surface3Color
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Student checklist card
-        SafiriCard(testTag = "students_checklist_card") {
-            Text(
-                text = "KILIMANI CHECKLIST",
-                color = TextTertiaryColor,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.5.sp
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-
-            students.forEach { student ->
-                Column(
+        if (com.example.BuildConfig.DEBUG) {
+            SafiriCard(testTag = "boarding_progress_card") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Checklist Progress", color = TextPrimaryColor, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("$boardedCount / 6 boarded", color = GreenAccent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { boardedCount.toFloat() / 6f },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Surface3Color)
-                        .padding(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    color = GreenAccent,
+                    trackColor = Surface3Color
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Student checklist card
+            SafiriCard(testTag = "students_checklist_card") {
+                Text(
+                    text = "KILIMANI CHECKLIST",
+                    color = TextTertiaryColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                students.forEach { student ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Surface3Color)
+                            .padding(12.dp)
                     ) {
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(student.avatarColor.copy(alpha = 0.15f))
+                                        .border(1.dp, student.avatarColor.copy(alpha = 0.5f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = student.initials,
+                                        color = student.avatarColor,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = student.name,
+                                        color = TextPrimaryColor,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                     Row(
+                                         verticalAlignment = Alignment.CenterVertically,
+                                         modifier = Modifier.clickable {
+                                             val cleanPhone = student.parentPhone.replace(" ", "").replace("-", "")
+                                             if (cleanPhone.isNotBlank()) {
+                                                 try {
+                                                     val intent = Intent(Intent.ACTION_DIAL).apply {
+                                                         data = Uri.parse("tel:$cleanPhone")
+                                                     }
+                                                     context.startActivity(intent)
+                                                 } catch (_: Exception) {}
+                                             }
+                                         }
+                                     ) {
+                                         Text(
+                                             text = "Parent: ${student.parentName} (${student.parentPhone}) • ${student.pickupStop}",
+                                             color = TextSecondaryColor,
+                                             fontSize = 11.sp
+                                         )
+                                         Spacer(modifier = Modifier.width(4.dp))
+                                         Icon(
+                                             imageVector = Icons.Filled.Call,
+                                             contentDescription = "Call Parent",
+                                             tint = GreenAccent,
+                                             modifier = Modifier.size(12.dp)
+                                         )
+                                     }
+                                }
+                            }
+
+                            val tagColor = when (student.status) {
+                                StudentStatus.BOARDED -> GreenAccent
+                                StudentStatus.DROPPED_OFF -> AccentBlue
+                                StudentStatus.ABSENT -> RedAccent
+                                StudentStatus.NOT_BOARDED -> AmberAccent
+                            }
+                            val tagText = when (student.status) {
+                                StudentStatus.BOARDED -> "Boarded ✓"
+                                StudentStatus.DROPPED_OFF -> "Dropped Off"
+                                StudentStatus.ABSENT -> "ABSENT"
+                                StudentStatus.NOT_BOARDED -> "Waiting"
+                            }
+                            SafiriTag(text = tagText, color = tagColor)
+                        }
+
+                        if (!student.parentNote.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(6.dp))
                             Box(
                                 modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(student.avatarColor.copy(alpha = 0.15f))
-                                    .border(1.dp, student.avatarColor.copy(alpha = 0.5f), CircleShape),
-                                contentAlignment = Alignment.Center
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(AmberAccent.copy(alpha = 0.15f))
+                                    .border(1.dp, AmberAccent.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                    .padding(8.dp)
                             ) {
                                 Text(
-                                    text = student.initials,
-                                    color = student.avatarColor,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = student.name,
-                                    color = TextPrimaryColor,
-                                    fontSize = 14.sp,
+                                    text = "Note from Parent: \"${student.parentNote}\"",
+                                    color = AmberAccent,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
-                                 Row(
-                                     verticalAlignment = Alignment.CenterVertically,
-                                     modifier = Modifier.clickable {
-                                         val cleanPhone = student.parentPhone.replace(" ", "").replace("-", "")
-                                         if (cleanPhone.isNotBlank()) {
-                                             try {
-                                                 val intent = Intent(Intent.ACTION_DIAL).apply {
-                                                     data = Uri.parse("tel:$cleanPhone")
-                                                 }
-                                                 context.startActivity(intent)
-                                             } catch (_: Exception) {}
-                                         }
-                                     }
-                                 ) {
-                                     Text(
-                                         text = "Parent: ${student.parentName} (${student.parentPhone}) • ${student.pickupStop}",
-                                         color = TextSecondaryColor,
-                                         fontSize = 11.sp
-                                     )
-                                     Spacer(modifier = Modifier.width(4.dp))
-                                     Icon(
-                                         imageVector = Icons.Filled.Call,
-                                         contentDescription = "Call Parent",
-                                         tint = GreenAccent,
-                                         modifier = Modifier.size(12.dp)
-                                     )
-                                 }
                             }
                         }
 
-                        val tagColor = when (student.status) {
-                            StudentStatus.BOARDED -> GreenAccent
-                            StudentStatus.DROPPED_OFF -> AccentBlue
-                            StudentStatus.ABSENT -> RedAccent
-                            StudentStatus.NOT_BOARDED -> AmberAccent
+                        if (!student.absentReason.isNullOrBlank() && student.status == StudentStatus.ABSENT) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(RedAccent.copy(alpha = 0.15f))
+                                    .border(1.dp, RedAccent.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                    .padding(8.dp)
+                            ) {
+                                Text(
+                                    text = "Parent marked ABSENT: ${student.absentReason}",
+                                    color = RedAccent,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
-                        val tagText = when (student.status) {
-                            StudentStatus.BOARDED -> "Boarded ✓"
-                            StudentStatus.DROPPED_OFF -> "Dropped Off"
-                            StudentStatus.ABSENT -> "ABSENT"
-                            StudentStatus.NOT_BOARDED -> "Waiting"
-                        }
-                        SafiriTag(text = tagText, color = tagColor)
-                    }
 
-                    if (!student.parentNote.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(AmberAccent.copy(alpha = 0.15f))
-                                .border(1.dp, AmberAccent.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                                .padding(8.dp)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
                         ) {
-                            Text(
-                                text = "Note from Parent: \"${student.parentNote}\"",
-                                color = AmberAccent,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    if (!student.absentReason.isNullOrBlank() && student.status == StudentStatus.ABSENT) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(RedAccent.copy(alpha = 0.15f))
-                                .border(1.dp, RedAccent.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                                .padding(8.dp)
-                        ) {
-                            Text(
-                                text = "Parent marked ABSENT: ${student.absentReason}",
-                                color = RedAccent,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        if (student.status != StudentStatus.BOARDED) {
-                            Button(
-                                onClick = { viewModel.updateStudentStatus(student.id, StudentStatus.BOARDED) },
-                                colors = ButtonDefaults.buttonColors(containerColor = GreenAccent),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                modifier = Modifier.height(30.dp),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("Board Student", color = BackgroundColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            if (student.status != StudentStatus.BOARDED) {
+                                Button(
+                                    onClick = { viewModel.updateStudentStatus(student.id, StudentStatus.BOARDED) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = GreenAccent),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(30.dp),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Board Student", color = BackgroundColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
                             }
-                            Spacer(modifier = Modifier.width(6.dp))
-                        }
 
-                        if (student.status == StudentStatus.BOARDED) {
-                            Button(
-                                onClick = { viewModel.updateStudentStatus(student.id, StudentStatus.DROPPED_OFF) },
-                                colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                modifier = Modifier.height(30.dp),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("Arrived / Drop Off", color = BackgroundColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            if (student.status == StudentStatus.BOARDED) {
+                                Button(
+                                    onClick = { viewModel.updateStudentStatus(student.id, StudentStatus.DROPPED_OFF) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(30.dp),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Arrived / Drop Off", color = BackgroundColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
                             }
-                            Spacer(modifier = Modifier.width(6.dp))
-                        }
 
-                        if (student.status != StudentStatus.NOT_BOARDED) {
-                            OutlinedButton(
-                                onClick = { viewModel.updateStudentStatus(student.id, StudentStatus.NOT_BOARDED) },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier.height(30.dp),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("Reset", fontSize = 11.sp, color = TextSecondaryColor)
+                            if (student.status != StudentStatus.NOT_BOARDED) {
+                                OutlinedButton(
+                                    onClick = { viewModel.updateStudentStatus(student.id, StudentStatus.NOT_BOARDED) },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(30.dp),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Reset", fontSize = 11.sp, color = TextSecondaryColor)
+                                }
                             }
                         }
                     }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Mark Kilimani complete button
+                Button(
+                    onClick = { viewModel.setKilimaniComplete() },
+                    enabled = !kilimaniComplete,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (kilimaniComplete) Surface3Color else GreenAccent,
+                        disabledContainerColor = Surface3Color
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("mark_complete_button"),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = if (kilimaniComplete) "Kilimani complete ✓" else "Mark Kilimani complete",
+                        color = if (kilimaniComplete) TextSecondaryColor else BackgroundColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Mark Kilimani complete button
-            Button(
-                onClick = { viewModel.setKilimaniComplete() },
-                enabled = !kilimaniComplete,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (kilimaniComplete) Surface3Color else GreenAccent,
-                    disabledContainerColor = Surface3Color
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag("mark_complete_button"),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text(
-                    text = if (kilimaniComplete) "Kilimani complete ✓" else "Mark Kilimani complete",
-                    color = if (kilimaniComplete) TextSecondaryColor else BackgroundColor,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Reveal Next Stop card when complete
-        AnimatedVisibility(visible = kilimaniComplete) {
-            SafiriCard(testTag = "next_stop_card") {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(Icons.Filled.DirectionsTransit, contentDescription = "Transit", tint = AccentBlue)
+            // Reveal Next Stop card when complete
+            AnimatedVisibility(visible = kilimaniComplete) {
+                SafiriCard(testTag = "next_stop_card") {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Filled.DirectionsTransit, contentDescription = "Transit", tint = AccentBlue)
+                        Text(
+                            text = "UPCOMING STATION INSTRUCTIONS",
+                            color = TextTertiaryColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.5.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "UPCOMING STATION INSTRUCTIONS",
-                        color = TextTertiaryColor,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.5.sp
+                        text = "Upper Hill Junction drop-off",
+                        color = TextPrimaryColor,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Expected arrivals: 04:25 PM • 14 kids scheduled to alight. Verify all baggage handles before releasing emergency pneumatic doors.",
+                        color = TextSecondaryColor,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                 }
-                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+        } else {
+            SafiriCard(testTag = "driver_students_unavailable_card") {
                 Text(
-                    text = "Upper Hill Junction drop-off",
-                    color = TextPrimaryColor,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Expected arrivals: 04:25 PM • 14 kids scheduled to alight. Verify all baggage handles before releasing emergency pneumatic doors.",
+                    text = "Student boarding is unavailable until students and a route are assigned to this driver.",
                     color = TextSecondaryColor,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    modifier = Modifier.padding(top = 4.dp)
+                    fontSize = 13.sp
                 )
             }
         }
@@ -746,80 +790,90 @@ fun DriverHistoryTab(viewModel: AppViewModel) {
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        // Metrics Summary Row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            MetricTile(label = "THIS WEEK RATE", value = "87%", modifier = Modifier.weight(1f))
-            MetricTile(label = "LAST WEEK RATE", value = "82%", modifier = Modifier.weight(1f))
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Weekdays on-time bar chart (Mon-Fri)
-        SafiriCard(testTag = "on_time_chart_card") {
-            Text(
-                text = "ON-TIME RATE BY WEEKDAY",
-                color = TextTertiaryColor,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.5.sp
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Mon: 75, Tue: 88, Wed: 92 (Highlighted), Thu: 80, Fri: 87
+        if (com.example.BuildConfig.DEBUG) {
+            // Metrics Summary Row
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(140.dp)
-                    .padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                ChartBar(day = "Mon", rate = 75, highlighted = false)
-                ChartBar(day = "Tue", rate = 88, highlighted = false)
-                ChartBar(day = "Wed", rate = 92, highlighted = true) // Wednesday highlighted
-                ChartBar(day = "Thu", rate = 80, highlighted = false)
-                ChartBar(day = "Fri", rate = 87, highlighted = false)
+                MetricTile(label = "THIS WEEK RATE", value = "87%", modifier = Modifier.weight(1f))
+                MetricTile(label = "LAST WEEK RATE", value = "82%", modifier = Modifier.weight(1f))
             }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-        // Recent Trips list
-        SafiriCard(testTag = "recent_trips_history_card") {
-            Text(
-                text = "RECENT SHUTTLES LOGS",
-                color = TextTertiaryColor,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.5.sp
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+            // Weekdays on-time bar chart (Mon-Fri)
+            SafiriCard(testTag = "on_time_chart_card") {
+                Text(
+                    text = "ON-TIME RATE BY WEEKDAY",
+                    color = TextTertiaryColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+                Spacer(modifier = Modifier.height(24.dp))
 
-            TripHistoryRow(date = "Today Morning", duration = "06:45 AM - 07:22 AM", delay = "On time", color = GreenAccent)
-            TripHistoryRow(date = "Yesterday Evening", duration = "03:48 PM - 04:30 PM", delay = "+8 min", color = AmberAccent)
-            TripHistoryRow(date = "Yesterday Morning", duration = "06:42 AM - 07:18 AM", delay = "On time", color = GreenAccent)
-        }
+                // Mon: 75, Tue: 88, Wed: 92 (Highlighted), Thu: 80, Fri: 87
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                        .padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    ChartBar(day = "Mon", rate = 75, highlighted = false)
+                    ChartBar(day = "Tue", rate = 88, highlighted = false)
+                    ChartBar(day = "Wed", rate = 92, highlighted = true) // Wednesday highlighted
+                    ChartBar(day = "Thu", rate = 80, highlighted = false)
+                    ChartBar(day = "Fri", rate = 87, highlighted = false)
+                }
+            }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-        // Monthly stats card
-        SafiriCard(testTag = "monthly_stats_card") {
-            Text(
-                text = "MONTHLY TOTAL RECORD",
-                color = TextTertiaryColor,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.5.sp
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+            // Recent Trips list
+            SafiriCard(testTag = "recent_trips_history_card") {
+                Text(
+                    text = "RECENT SHUTTLES LOGS",
+                    color = TextTertiaryColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
 
-            SummaryLabelRow("Total Trips Dispatched", "22")
-            SummaryLabelRow("On-Time Trips Rate", "19 / 22 (86%)")
-            SummaryLabelRow("Students Transported", "484 kids")
-            SummaryLabelRow("Odometer Distance covered", "312 km")
+                TripHistoryRow(date = "Today Morning", duration = "06:45 AM - 07:22 AM", delay = "On time", color = GreenAccent)
+                TripHistoryRow(date = "Yesterday Evening", duration = "03:48 PM - 04:30 PM", delay = "+8 min", color = AmberAccent)
+                TripHistoryRow(date = "Yesterday Morning", duration = "06:42 AM - 07:18 AM", delay = "On time", color = GreenAccent)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Monthly stats card
+            SafiriCard(testTag = "monthly_stats_card") {
+                Text(
+                    text = "MONTHLY TOTAL RECORD",
+                    color = TextTertiaryColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                SummaryLabelRow("Total Trips Dispatched", "22")
+                SummaryLabelRow("On-Time Trips Rate", "19 / 22 (86%)")
+                SummaryLabelRow("Students Transported", "484 kids")
+                SummaryLabelRow("Odometer Distance covered", "312 km")
+            }
+        } else {
+            SafiriCard(testTag = "driver_history_unavailable_card") {
+                Text(
+                    text = "Trip history and performance metrics will appear after completed trips are recorded.",
+                    color = TextSecondaryColor,
+                    fontSize = 13.sp
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))

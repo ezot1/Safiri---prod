@@ -12,6 +12,9 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -24,6 +27,10 @@ object DriverLocationTracker {
 
     private const val UPDATE_INTERVAL_MS = 5000L
     private const val MIN_UPDATE_INTERVAL_MS = 3000L
+    private val _latestLocation = MutableStateFlow<Location?>(null)
+    val latestLocation: StateFlow<Location?> = _latestLocation.asStateFlow()
+    private val _trackingError = MutableStateFlow<String?>(null)
+    val trackingError: StateFlow<String?> = _trackingError.asStateFlow()
 
     // Nairobi Shuttle Corridor endpoints (Kawangware Stop -> Upper Hill Junction)
     private const val ROUTE_START_LAT = -1.2825
@@ -42,6 +49,24 @@ object DriverLocationTracker {
             Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
         return fine || coarse
+    }
+
+    fun publishLocation(location: Location) {
+        _trackingError.value = null
+        _latestLocation.value = location
+    }
+
+    fun publishTrackingError(message: String) {
+        _latestLocation.value = null
+        _trackingError.value = message
+    }
+
+    fun clearTrackingError() {
+        _trackingError.value = null
+    }
+
+    fun clearPublishedLocation() {
+        _latestLocation.value = null
     }
 
     @SuppressLint("MissingPermission")
