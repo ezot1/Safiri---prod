@@ -1,0 +1,14 @@
+{
+  "name": "safiri-firestore-rules",
+  "version": "1.0.0",
+  "description": "Firestore security rules unit tests for Safiri School Bus Tracker",
+  "private": true,
+  "scripts": {
+    "test": "node --test firestore.test.js",
+    "test:rules": "firebase emulators:exec --only firestore \"node --test firestore.test.js\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
+    "firebase-admin": "^12.0.0"
+  }
+}

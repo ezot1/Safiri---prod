@@ -1,21 +1,44 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ProGuard Rules for Safiri Production Release
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Preserve Line Numbers for Crash Reporting / Play Console De-obfuscation
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Kotlin Coroutines & Reflection
+-keepnames class kotlinx.coroutines.** { *; }
+-keepclassmembers class kotlinx.coroutines.** { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Moshi JSON Converter
+-keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
+-dontwarn javax.annotation.**
+-keep class com.squareup.moshi.** { *; }
+-keep interface com.squareup.moshi.** { *; }
+-keepclassmembers class * {
+    @com.squareup.moshi.Json *;
+}
+
+# Room Database
+-keepclassmembers class * extends androidx.room.RoomDatabase { *; }
+-dontwarn androidx.room.paging.**
+-keep class * extends androidx.room.RoomDatabase
+
+# Firebase (Auth, Firestore, App Check)
+-keepattributes *Annotation*
+-dontwarn com.google.firebase.**
+-keep class com.google.firebase.** { *; }
+
+# Models & Data Classes (Prevent field obfuscation for Firestore serialization)
+-keep class com.example.models.** { *; }
+-keep class com.example.database.** { *; }
+-keepclassmembers class com.example.models.** {
+    <fields>;
+    <init>(...);
+}
+-keepclassmembers class com.example.database.** {
+    <fields>;
+    <init>(...);
+}
+
+# Google Play Services & Maps
+-keep class com.google.android.gms.** { *; }
+-dontwarn com.google.android.gms.**
